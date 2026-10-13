@@ -4,6 +4,8 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { auth, loginWithGoogle, loginWithEmail, registerWithEmail, requestPasswordReset, logout, authErrorMessage } from './firebase'
 import pubmedGovLogo from './assets/pubmed-gov-logo.png'
 import type { Indicators, OverallIndicators } from './scientificIndicators.ts'
+import { makeSavedArticle, type SavedArticle } from './historyRecord.ts'
+import { loadHistory, saveHistory } from './history.ts'
 
 type VerifyMode = 'url' | 'image'
 type AnalysisStatus = 'idle' | 'loading' | 'selecting' | 'done'
@@ -423,7 +425,7 @@ function LoginBanner({ onLogin, onDismiss }: { onLogin: () => void; onDismiss: (
 }
 
 // ── Saved Articles Panel ──────────────────────────────────────
-function SavedPanel({ articles, onClose }: { articles: AnalysisResult[]; onClose: () => void }) {
+function SavedPanel({ articles, onClose, error }: { articles: SavedArticle[]; onClose: () => void; error: string }) {
   const [activeArea, setActiveArea] = useState<string>('Todas')
   const verdictColor = {
     verified: 'var(--color-teal)',
@@ -452,7 +454,7 @@ function SavedPanel({ articles, onClose }: { articles: AnalysisResult[]; onClose
         <div className="flex items-center justify-between px-5 py-4 border-b border-[--color-border] shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-[--color-teal]" />
-            <span id="saved-title" className="font-mono text-[11px] text-[--color-muted] tracking-widest uppercase">Artigos nesta sessão</span>
+            <span id="saved-title" className="font-mono text-[11px] text-[--color-muted] tracking-widest uppercase">Histórico da conta</span>
             {articles.length > 0 && (
               <span className="font-mono text-[10px] text-[--color-teal] border border-[--color-teal] rounded px-1">{articles.length}</span>
             )}
@@ -460,6 +462,7 @@ function SavedPanel({ articles, onClose }: { articles: AnalysisResult[]; onClose
           <button onClick={onClose} className="text-[--color-muted] hover:text-white transition-colors text-sm" aria-label="Fechar artigos salvos">✕</button>
         </div>
 
+        {error && <p role="alert" className="px-5 py-3 text-xs text-red-400 border-b border-[--color-border]">{error}</p>}
         {/* Area filters */}
         {articles.length > 0 && (
           <div className="px-4 py-3 border-b border-[--color-border] shrink-0">
@@ -664,7 +667,8 @@ export default function App() {
   const [showBanner, setShowBanner] = useState(false)
   const [showSaved, setShowSaved] = useState(false)
   const [showTermsModal, setShowTermsModal] = useState(false)
-  const [savedArticles, setSavedArticles] = useState<AnalysisResult[]>([])
+  const [savedArticles, setSavedArticles] = useState<SavedArticle[]>([])
+  const [historyError, setHistoryError] = useState('')
   const [accessibility, setAccessibility] = useState<AccessibilitySettings>(() => {
     const defaults = {
       highContrast: false,
@@ -699,8 +703,20 @@ export default function App() {
     setIsLoggedIn(Boolean(user))
     setUserName(user?.displayName || user?.email?.split('@')[0] || '')
     setSavedArticles([])
+    setHistoryError('')
     setShowSaved(false)
-    if (user) { setShowLoginModal(false); setShowBanner(false) }
+    if (user) {
+      setShowLoginModal(false)
+      setShowBanner(false)
+      void loadHistory(user.uid).then(entries => {
+        if (auth.currentUser?.uid === user.uid) {
+          setSavedArticles(current => [...current, ...entries.filter(entry => !current.some(item => item.analysisId === entry.analysisId))]
+            .sort((a, b) => b.savedAt - a.savedAt))
+        }
+      }).catch(() => {
+        if (auth.currentUser?.uid === user.uid) setHistoryError('Não foi possível carregar o histórico. Confira o Firestore e suas regras de acesso.')
+      })
+    }
   }, error => setApiError(authErrorMessage(error))), [])
 
   const handleLogout = async () => {
@@ -719,7 +735,14 @@ export default function App() {
       const data = mapResult(job)
       data.healthArea = detectHealthArea(data.title)
       setResult(data)
-      if (auth.currentUser) setSavedArticles(prev => [data, ...prev.filter(item => item.analysisId !== data.analysisId)])
+      const currentUser = auth.currentUser
+      if (currentUser) {
+        const entry = makeSavedArticle(data)
+        setSavedArticles(prev => [entry, ...prev.filter(item => item.analysisId !== entry.analysisId)])
+        void saveHistory(currentUser.uid, entry).catch(() => {
+          if (auth.currentUser?.uid === currentUser.uid) setHistoryError('Não foi possível salvar a análise no histórico. Verifique as regras do Firestore.')
+        })
+      }
       setStatus('done')
     }
   }
@@ -1266,6 +1289,7 @@ export default function App() {
       {showSaved && (
         <SavedPanel
           articles={savedArticles}
+          error={historyError}
           onClose={() => setShowSaved(false)}
         />
       )}
