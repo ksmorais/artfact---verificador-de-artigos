@@ -117,7 +117,7 @@ export function mapResult(job: Job): AnalysisResult {
       const excerpt = str(finding.quote_pt) || str(finding.quote)
       if (!excerpt) return []
       const pmid = /^[0-9]+$/.test(str(finding.pmid)) ? str(finding.pmid) : undefined
-      const doi = /^10\\.\\d{4,9}\\//.test(str(finding.doi)) ? str(finding.doi) : undefined
+      const doi = /^10[.][0-9]{4,9}[/]/.test(str(finding.doi)) ? str(finding.doi) : undefined
       const url = safeUrl(finding.source_url) || (pmid ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/` : doi ? `https://doi.org/${encodeURI(doi)}` : undefined)
       return [{ relation: str(finding.relation) || 'UNCERTAIN', articleTitle: str(finding.article_title_pt) || str(finding.article_title) || 'Artigo científico',
         text: excerpt.slice(0, 460), url, doi, pmid }]
