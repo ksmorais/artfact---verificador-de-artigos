@@ -3,6 +3,7 @@ import { startAnalysis, pollAnalysis, selectClaims, extractedClaims, mapResult, 
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, loginWithGoogle, logout, authErrorMessage } from './firebase'
 import pubmedGovLogo from './assets/pubmed-gov-logo.png'
+import type { Indicators, OverallIndicators } from './scientificIndicators.ts'
 
 type VerifyMode = 'url' | 'image'
 type AnalysisStatus = 'idle' | 'loading' | 'selecting' | 'done'
@@ -51,6 +52,49 @@ function VerdictBadge({ verdict, size = 'sm' }: { verdict: Verdict; size?: 'sm' 
   )
 }
 
+
+function CountSummary({ evidence }: { evidence: Indicators['evidence'] }) {
+  if (!evidence) return <p className="text-xs text-[--color-muted]">Contagens não disponibilizadas pela API.</p>
+  const labels = [
+    { name: 'Compatíveis', value: evidence.supports, color: 'var(--color-teal)' },
+    { name: 'Divergentes', value: evidence.contradicts, color: 'var(--color-red)' },
+    { name: 'Contextuais', value: evidence.neutral, color: 'var(--color-blue)' },
+    { name: 'Inconclusivas', value: evidence.uncertain, color: 'var(--color-amber)' },
+  ]
+  return <div className="flex flex-wrap gap-2">
+    {labels.map(item => <span key={item.name} className="px-2 py-1 rounded border border-[--color-border] text-xs">
+      <strong className="tabular-nums" style={{ color: item.color }}>{item.value}</strong> {item.name}
+    </span>)}
+  </div>
+}
+function ScientificSummary({ data }: { data: OverallIndicators }) {
+  const metrics = [
+    ['Cobertura da análise', data.coverage === null ? 'N/D' : `${data.coverage}%`],
+    ['Artigos recuperados*', data.retrieved ?? 'N/D'],
+    ['Artigos avaliados*', data.assessed ?? 'N/D'],
+    ['Textos completos*', data.fullText ?? 'N/D'],
+  ]
+  return <section aria-labelledby="metrics-heading" className="border border-[--color-border] rounded-lg p-5 bg-[--color-surface] space-y-4">
+    <div>
+      <h3 id="metrics-heading" className="text-xs font-mono tracking-widest uppercase text-[--color-teal]">Indicadores científicos</h3>
+      <p className="text-xs text-[--color-muted] mt-1">Dados observados, não uma porcentagem de verdade ou credibilidade.</p>
+    </div>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {metrics.map(([name, val]) => <div key={name} className="p-3 rounded-md bg-[--color-background] border border-[--color-border]">
+        <div className="text-xl font-semibold tabular-nums">{val}</div><div className="text-[11px] text-[--color-muted]">{name}</div>
+      </div>)}
+    </div>
+    {data.coverage !== null && <div className="h-2 rounded-full bg-[--color-border] overflow-hidden" role="progressbar"
+      aria-label="Cobertura dos artigos recuperados" aria-valuenow={data.coverage} aria-valuemin={0} aria-valuemax={100}>
+      <div className="h-full bg-[--color-teal]" style={{ width: `${data.coverage}%` }} />
+    </div>}
+    <CountSummary evidence={data.evidence} />
+    <p className="text-[11px] text-[--color-muted]">
+      *Somatório de {data.claimsMeasured} alegação(ões): o mesmo estudo pode ser contado novamente em alegações diferentes.
+      N/D significa que a API não forneceu dados suficientes.
+    </p>
+  </section>
+}
 function AnalysisCard({ result }: { result: AnalysisResult }) {
   const verdictLabel = { verified: 'Compatibilidade preliminar', fake: 'Possível divergência', uncertain: 'Resultado misto ou inconclusivo' }
 
@@ -96,6 +140,8 @@ function AnalysisCard({ result }: { result: AnalysisResult }) {
         </div>
       </div>
 
+      <ScientificSummary data={result.indicators} />
+
       {/* Claims */}
       <div className="border border-[--color-border] rounded-lg bg-[--color-surface] overflow-hidden">
         <div className="px-5 py-3 border-b border-[--color-border] flex items-center gap-2">
@@ -113,6 +159,12 @@ function AnalysisCard({ result }: { result: AnalysisResult }) {
               </div>
               
               <p className="text-xs text-[--color-muted] leading-relaxed">{claim.note}</p>
+              <div className="border border-[--color-border] rounded-md p-3 space-y-2" aria-label="Indicadores desta alegação">
+                <CountSummary evidence={claim.indicators.evidence} />
+                <p className="text-xs text-[--color-muted]">Cobertura de documentos: {claim.indicators.coverage === null ? 'N/D' : `${claim.indicators.coverage}%`}</p>
+                {claim.indicators.methodology && <p className="text-xs text-[--color-muted]">Triagem metodológica: {claim.indicators.methodology}</p>}
+                {claim.indicators.methodologyNote && <p className="text-xs text-[--color-muted]">{claim.indicators.methodologyNote}</p>}
+              </div>
             </div>
           ))}
         </div>

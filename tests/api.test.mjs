@@ -52,3 +52,34 @@ test('cliente envia contrato, consulta estado leve, seleciona alegações e info
     await assert.rejects(pollAnalysis('abc', signal, () => {}), /Falha no pipeline/)
   } finally { globalThis.fetch = original }
 })
+
+test('exibe somente dados de cobertura e evidências fornecidos pelo backend', () => {
+  const result = mapResult({ analysis_id: 'test', status: 'SUCCEEDED', result: { claim_analyses: [
+    { status: 'SUCCEEDED', claim: { text: 'Teste A' }, result: {
+      user_summary: { reading: { retrieved_count: 4, assessed_count: 3, full_text_count: 2 },
+        evidence_balance: { SUPPORTS: 2, CONTRADICTS: 1, NEUTRAL: 0, UNCERTAIN: 1 } },
+      verification: { indicators: { methodological_confidence: { label: 'Não avaliada' } } },
+    } },
+    { status: 'SUCCEEDED', claim: { text: 'Teste B' }, result: {
+      user_summary: { reading: { retrieved_count: 2, assessed_count: 1, full_text_count: 1 },
+        evidence_balance: { SUPPORTS: 0, CONTRADICTS: 1, NEUTRAL: 1, UNCERTAIN: 0 } },
+    } },
+  ] } })
+  assert.equal(result.credibilityScore, null)
+  assert.equal(result.indicators.retrieved, 6)
+  assert.equal(result.indicators.assessed, 4)
+  assert.equal(result.indicators.coverage, 67)
+  assert.equal(result.indicators.evidence.supports, 2)
+  assert.equal(result.indicators.evidence.contradicts, 2)
+  assert.equal(result.claims[0].indicators.methodology, 'Não avaliada')
+})
+test('dados ausentes, falhas e contagens incoerentes não geram percentuais', () => {
+  const result = mapResult({ analysis_id: 'a', status: 'SUCCEEDED', result: { claim_analyses: [
+    { status: 'SUCCEEDED', claim: { text: 'A' }, result: { user_summary: { reading: { retrieved_count: 1, assessed_count: 8 } } } },
+    { status: 'FAILED', claim: { text: 'B' }, error: { message: 'Indisponível' } },
+  ] } })
+  assert.equal(result.credibilityScore, null)
+  assert.equal(result.indicators.coverage, null)
+  assert.equal(result.indicators.evidence, null)
+  assert.equal(result.claims[1].indicators.coverage, null)
+})

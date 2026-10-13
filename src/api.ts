@@ -1,8 +1,10 @@
+import { readIndicators, summarizeIndicators, type Indicators, type OverallIndicators } from './scientificIndicators.ts'
+
 export type Verdict = 'verified' | 'fake' | 'uncertain'
-export interface Claim { text: string; verdict: Verdict; confidence: null; note: string }
+export interface Claim { text: string; verdict: Verdict; confidence: null; note: string; indicators: Indicators }
 export interface AnalysisResult {
   title: string; source: string; publishedDate: string; overallVerdict: Verdict
-  credibilityScore: null; claims: Claim[]; redFlags: string[]
+  credibilityScore: null; claims: Claim[]; redFlags: string[]; indicators: OverallIndicators
   supportingLinks: { label: string; url: string }[]; analysisId: string
   articleUrl?: string; healthArea?: string
 }
@@ -112,13 +114,14 @@ export function mapResult(job: Job): AnalysisResult {
     }
     if (failed) flags.add(`Falha na alegação: ${str(record(entry.claim).text)}`)
     return { text: str(record(entry.claim).text) || 'Alegação', verdict: failed ? 'uncertain' as const : verdict(summary.status), confidence: null,
+      indicators: readIndicators(failed ? {} : data),
       note: failed ? str(record(entry.error).message) || 'Não foi possível avaliar esta alegação.' : [str(summary.headline), str(summary.summary), str(summary.interpretation)].filter(Boolean).join(' ') || 'Resultado sem resumo. Consulte o relatório completo.' }
   })
   const first = claims[0].verdict
   const overall = claims.every(c => c.verdict === first) ? first : 'uncertain'
   const input = str(record(result.input).source)
   return { title: str(submitted.title) || 'Análise do artigo', source: input || 'Artigo enviado', publishedDate: job.updated_at ? `Analisado em ${new Date(job.updated_at).toLocaleDateString('pt-BR')}` : 'Data de análise não informada', overallVerdict: overall,
-    credibilityScore: null, claims, redFlags: [...flags], supportingLinks: [...links].map(([url, label]) => ({ url, label })), analysisId: job.analysis_id,
+    credibilityScore: null, claims, indicators: summarizeIndicators(claims.filter((_c, i) => entries[i].status !== 'FAILED').map(c => c.indicators)), redFlags: [...flags], supportingLinks: [...links].map(([url, label]) => ({ url, label })), analysisId: job.analysis_id,
     articleUrl: safeUrl(input) }
 }
 export function reportUrl(id: string) { return `${base}/analyses/${encodeURIComponent(id)}/report.md` }
