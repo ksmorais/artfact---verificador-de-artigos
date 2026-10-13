@@ -325,7 +325,7 @@ function TermsModal({ onClose }: { onClose: () => void }) {
 }
 
 // ── Login Modal ──────────────────────────────────────────────
-function LoginModal({ onClose }: { onClose: () => void }) {
+function LoginModal({ onClose, onRegistered }: { onClose: () => void; onRegistered: (name: string) => void }) {
   const [step, setStep] = useState<'login' | 'register' | 'reset'>('login')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -353,7 +353,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
         setMessage('Se este e-mail estiver cadastrado, você receberá as instruções de recuperação.')
         return
       }
-      if (step === 'register') await registerWithEmail(name, email, password)
+      if (step === 'register') { await registerWithEmail(name, email, password); onRegistered(name.trim()) }
       else await loginWithEmail(email, password)
       onClose()
     } catch (e) {
@@ -1303,6 +1303,7 @@ export default function App() {
       {showLoginModal && (
         <LoginModal
           onClose={() => setShowLoginModal(false)}
+          onRegistered={setUserName}
         />
       )}
       {showTermsModal && <TermsModal onClose={() => setShowTermsModal(false)} />}
