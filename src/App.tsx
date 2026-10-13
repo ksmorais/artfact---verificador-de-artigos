@@ -167,6 +167,26 @@ function AnalysisCard({ result }: { result: AnalysisResult }) {
                 {claim.indicators.methodology && <p className="text-xs text-[--color-muted]">Triagem metodológica: {claim.indicators.methodology}</p>}
                 {claim.indicators.methodologyNote && <p className="text-xs text-[--color-muted]">{claim.indicators.methodologyNote}</p>}
               </div>
+              {claim.findings.length > 0 && <div className="space-y-2 pt-2">
+                <h4 className="font-mono uppercase tracking-wide text-[10px] text-[--color-muted]">Trechos localizados e rastreabilidade</h4>
+                {claim.findings.map((finding, fi) => (
+                  <div key={fi} className="rounded-lg border border-[--color-border] p-3 space-y-2 bg-[--color-background]">
+                    <div className="flex justify-between gap-3 flex-wrap">
+                      <span className="text-[11px] text-[--color-foreground] font-semibold">{finding.articleTitle}</span>
+                      <span className="font-mono text-[10px] text-[--color-muted]">{({
+                        SUPPORTS: 'Compatível', CONTRADICTS: 'Divergente', NEUTRAL: 'Contextual', UNCERTAIN: 'Inconclusivo'
+                      } as Record<string, string>)[finding.relation] || 'Avaliação parcial'}</span>
+                    </div>
+                    <blockquote className="text-xs text-[--color-muted] leading-relaxed border-l-2 border-[--color-teal] pl-3">{finding.text}</blockquote>
+                    <div className="flex flex-wrap gap-3 items-center">
+                      {finding.doi && <span className="font-mono text-[10px] text-[--color-muted] break-all">DOI: {finding.doi}</span>}
+                      {finding.pmid && <span className="font-mono text-[10px] text-[--color-muted]">PMID: {finding.pmid}</span>}
+                      {finding.url && <a href={finding.url} target="_blank" rel="noopener noreferrer" className="text-xs text-[--color-blue] underline">Consultar fonte</a>}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[11px] text-[--color-muted]">Trechos extraídos automaticamente. Confira o contexto integral nas fontes e no relatório.</p>
+              </div>}
             </div>
           ))}
         </div>

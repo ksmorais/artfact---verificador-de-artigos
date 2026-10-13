@@ -1,7 +1,8 @@
 import { readIndicators, summarizeIndicators, type Indicators, type OverallIndicators } from './scientificIndicators.ts'
 
 export type Verdict = 'verified' | 'fake' | 'uncertain'
-export interface Claim { text: string; verdict: Verdict; confidence: null; note: string; indicators: Indicators }
+export interface Finding { relation: string; articleTitle: string; text: string; url?: string; doi?: string; pmid?: string }
+export interface Claim { text: string; verdict: Verdict; confidence: null; note: string; indicators: Indicators; findings: Finding[] }
 export interface AnalysisResult {
   title: string; source: string; publishedDate: string; overallVerdict: Verdict
   credibilityScore: null; claims: Claim[]; redFlags: string[]; indicators: OverallIndicators
@@ -112,9 +113,18 @@ export function mapResult(job: Job): AnalysisResult {
       const url = safeUrl(article.url) || (str(article.pmid) ? `https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(str(article.pmid))}/` : undefined)
       if (url) links.set(url, str(article.title) || 'Artigo científico')
     }
+    const findings = failed ? [] : rows(summary.findings).slice(0, 3).flatMap(finding => {
+      const excerpt = str(finding.quote_pt) || str(finding.quote)
+      if (!excerpt) return []
+      const pmid = /^[0-9]+$/.test(str(finding.pmid)) ? str(finding.pmid) : undefined
+      const doi = /^10\\.\\d{4,9}\\//.test(str(finding.doi)) ? str(finding.doi) : undefined
+      const url = safeUrl(finding.source_url) || (pmid ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/` : doi ? `https://doi.org/${encodeURI(doi)}` : undefined)
+      return [{ relation: str(finding.relation) || 'UNCERTAIN', articleTitle: str(finding.article_title_pt) || str(finding.article_title) || 'Artigo científico',
+        text: excerpt.slice(0, 460), url, doi, pmid }]
+    })
     if (failed) flags.add(`Falha na alegação: ${str(record(entry.claim).text)}`)
     return { text: str(record(entry.claim).text) || 'Alegação', verdict: failed ? 'uncertain' as const : verdict(summary.status), confidence: null,
-      indicators: readIndicators(failed ? {} : data),
+      indicators: readIndicators(failed ? {} : data), findings,
       note: failed ? str(record(entry.error).message) || 'Não foi possível avaliar esta alegação.' : [str(summary.headline), str(summary.summary), str(summary.interpretation)].filter(Boolean).join(' ') || 'Resultado sem resumo. Consulte o relatório completo.' }
   })
   const first = claims[0].verdict

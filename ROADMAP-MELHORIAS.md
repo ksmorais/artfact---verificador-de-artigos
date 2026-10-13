@@ -19,11 +19,14 @@
 - Testar com duas contas: cada uma pode ler somente seu próprio histórico.
 - A API Flask **continua sem autenticação** de análises: integrar Firebase Admin no servidor e verificar propriedade de cada recurso ANTES de oferecer dados privados por ela. O controle Firestore não protege endpoints Flask.
 
-## Etapa 4 — UX e qualidade
-Detalhar trechos rastreáveis por DOI/PMID, limites metodológicos, downloads de relatório e melhor acessibilidade.
-Executar testes de unidade e cenário real de análise com Gemini/PubMed antes do merge.
+## Etapa 4 — UX e qualidade (parcialmente implementada)
+- Exibir até três trechos extraídos por alegação, com DOI, PMID e link seguro para consultar a fonte.
+- Aviso explícito de que trechos extraídos automaticamente devem ser conferidos no contexto original.
+- Fluxo já existente de relatórios Markdown preservado.
+- Pipeline CI para teste, tipagem e build do frontend por GitHub Actions.
+- **Pendente**: testes com APIs reais Gemini/PubMed e validação manual de acessibilidade/layout antes do merge.
 
-## Validar etapa 1
+## Validar todas as etapas
 ```powershell
 npm ci
 npm test

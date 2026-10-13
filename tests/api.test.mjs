@@ -83,3 +83,20 @@ test('dados ausentes, falhas e contagens incoerentes não geram percentuais', ()
   assert.equal(result.indicators.evidence, null)
   assert.equal(result.claims[1].indicators.coverage, null)
 })
+
+test('trechos científicos preservam identificadores e rejeitam links não seguros', () => {
+  const result = mapResult({ analysis_id: 'evidencias', status: 'SUCCEEDED', result: { claim_analyses: [
+    { status: 'SUCCEEDED', claim: { text: 'Alegação' }, result: { user_summary: {
+      findings: [
+        { relation: 'SUPPORTS', article_title: 'Estudo A', quote: 'Trecho apoiado por evidência', pmid: '123456', source_url: 'javascript:alert(1)' },
+        { relation: 'CONTRADICTS', article_title: 'Estudo B', quote_pt: 'Trecho divergente', doi: '10.1234/example', source_url: 'https://example.org/source' },
+        { relation: 'NEUTRAL', article_title: 'Estudo C' },
+      ],
+    } } },
+  ] } })
+  const findings = result.claims[0].findings
+  assert.equal(findings.length, 2)
+  assert.equal(findings[0].url, 'https://pubmed.ncbi.nlm.nih.gov/123456/')
+  assert.equal(findings[1].url, 'https://example.org/source')
+  assert.equal(findings[1].doi, '10.1234/example')
+})
