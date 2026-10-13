@@ -1,11 +1,11 @@
 import { useState, useRef, useCallback, useEffect, type FormEvent } from 'react'
-import { startAnalysis, pollAnalysis, selectClaims, extractedClaims, mapResult, reportUrl, type Job, type ExtractedClaim, type AnalysisResult, type Verdict } from './api'
+import { startAnalysis, pollAnalysis, selectClaims, extractedClaims, mapResult, getSavedAnalysis, reportUrl, type Job, type ExtractedClaim, type AnalysisResult, type Verdict } from './api'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, loginWithGoogle, loginWithEmail, registerWithEmail, requestPasswordReset, logout, authErrorMessage } from './firebase'
 import pubmedGovLogo from './assets/pubmed-gov-logo.png'
 import type { Indicators, OverallIndicators } from './scientificIndicators.ts'
 import { makeSavedArticle, type SavedArticle } from './historyRecord.ts'
-import { loadHistory, saveHistory } from './history.ts'
+import { loadHistory, saveHistory, deleteHistoryEntry } from './history.ts'
 
 type VerifyMode = 'url' | 'image'
 type AnalysisStatus = 'idle' | 'loading' | 'selecting' | 'done'
@@ -445,8 +445,19 @@ function LoginBanner({ onLogin, onDismiss }: { onLogin: () => void; onDismiss: (
 }
 
 // ── Saved Articles Panel ──────────────────────────────────────
-function SavedPanel({ articles, onClose, error }: { articles: SavedArticle[]; onClose: () => void; error: string }) {
+function SavedPanel({
+  articles, onClose, error, loading, busyId, onOpen, onDelete,
+}: {
+  articles: SavedArticle[]
+  onClose: () => void
+  error: string
+  loading: boolean
+  busyId: string
+  onOpen: (id: string) => void
+  onDelete: (id: string) => void
+}) {
   const [activeArea, setActiveArea] = useState<string>('Todas')
+  const [search, setSearch] = useState('')
   const verdictColor = {
     verified: 'var(--color-teal)',
     fake: 'var(--color-red)',
@@ -455,7 +466,11 @@ function SavedPanel({ articles, onClose, error }: { articles: SavedArticle[]; on
   const verdictLabel = { verified: 'Compatível', fake: 'Divergente', uncertain: 'Inconclusivo' }
 
   const areas = ['Todas', ...Array.from(new Set(articles.map((a) => a.healthArea ?? 'Geral')))]
-  const filtered = activeArea === 'Todas' ? articles : articles.filter((a) => (a.healthArea ?? 'Geral') === activeArea)
+  const filtered = articles.filter(a =>
+    (activeArea === 'Todas' || (a.healthArea ?? 'Geral') === activeArea)
+    && (a.title.toLowerCase().includes(search.trim().toLowerCase())
+      || a.source.toLowerCase().includes(search.trim().toLowerCase()))
+  )
 
   return (
     <div
@@ -483,6 +498,14 @@ function SavedPanel({ articles, onClose, error }: { articles: SavedArticle[]; on
         </div>
 
         {error && <p role="alert" className="px-5 py-3 text-xs text-red-400 border-b border-[--color-border]">{error}</p>}
+        <div className="px-4 pt-3">
+          <label htmlFor="history-search" className="block text-[10px] text-[--color-muted] mb-1">Buscar no histórico</label>
+          <input id="history-search" type="search" value={search} onChange={event => setSearch(event.target.value)}
+            placeholder="Pesquisar por título ou fonte" className="w-full rounded-md bg-[--color-background] border border-[--color-border] p-2.5 text-xs" />
+        </div>
+        <p className="px-4 pt-2 text-[10px] text-[--color-muted]">
+          Os metadados ficam no Firestore. Para reabrir o relatório, o backend original deve continuar disponível.
+        </p>
         {/* Area filters */}
         {articles.length > 0 && (
           <div className="px-4 py-3 border-b border-[--color-border] shrink-0">
@@ -518,13 +541,15 @@ function SavedPanel({ articles, onClose, error }: { articles: SavedArticle[]; on
 
         {/* Articles list */}
         <div className="flex-1 overflow-y-auto divide-y divide-[--color-border]">
-          {articles.length === 0 ? (
+          {loading ? (
+            <p className="px-5 py-10 text-center text-xs text-[--color-muted]" role="status">Carregando histórico…</p>
+          ) : articles.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-14 gap-3">
               <span className="font-mono text-3xl text-[--color-subtle]">⊡</span>
               <p className="text-xs text-[--color-muted] text-center font-mono">Nenhum artigo salvo ainda.</p>
             </div>
           ) : filtered.length === 0 ? (
-            <p className="text-xs text-[--color-muted] text-center py-10 font-mono">Sem artigos nesta área.</p>
+            <p className="text-xs text-[--color-muted] text-center py-10 font-mono">Nenhuma análise encontrada para os filtros.</p>
           ) : filtered.map((a, i) => {
             const area = a.healthArea ?? 'Geral'
             const cfg = HEALTH_AREAS[area] ?? HEALTH_AREAS['Geral']
@@ -547,7 +572,21 @@ function SavedPanel({ articles, onClose, error }: { articles: SavedArticle[]; on
                 <span className="font-mono text-[9px] text-[--color-subtle] ml-auto">Análise científica</span>
               </div>
               <p className="text-xs text-[--color-foreground] leading-snug line-clamp-2">{a.title}</p>
-              <p className="font-mono text-[10px] text-[--color-muted]">{a.source}</p>
+              <p className="font-mono text-[10px] text-[--color-muted] break-all">{a.source}</p>
+              <p className="font-mono text-[10px] text-[--color-subtle]">
+                Salvo em {new Date(a.savedAt).toLocaleString('pt-BR')}
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button type="button" disabled={Boolean(busyId)} onClick={() => onOpen(a.analysisId)}
+                  className="rounded px-3 py-2 border border-[--color-teal] text-[--color-teal] text-xs disabled:opacity-50">
+                  {busyId === `open:${a.analysisId}` ? 'Abrindo…' : 'Abrir resultado'}
+                </button>
+                <button type="button" disabled={Boolean(busyId)} onClick={() => onDelete(a.analysisId)}
+                  className="rounded px-3 py-2 border border-[--color-red] text-[--color-red] text-xs disabled:opacity-50"
+                  aria-label={`Excluir ${a.title} do histórico`}>
+                  {busyId === `delete:${a.analysisId}` ? 'Excluindo…' : 'Excluir registro'}
+                </button>
+              </div>
             </div>
           )})}
         </div>
@@ -689,6 +728,8 @@ export default function App() {
   const [showTermsModal, setShowTermsModal] = useState(false)
   const [savedArticles, setSavedArticles] = useState<SavedArticle[]>([])
   const [historyError, setHistoryError] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyBusyId, setHistoryBusyId] = useState('')
   const [accessibility, setAccessibility] = useState<AccessibilitySettings>(() => {
     const defaults = {
       highContrast: false,
@@ -724,6 +765,8 @@ export default function App() {
     setUserName(user?.displayName || user?.email?.split('@')[0] || '')
     setSavedArticles([])
     setHistoryError('')
+    setHistoryLoading(Boolean(user))
+    setHistoryBusyId('')
     setShowSaved(false)
     if (user) {
       setShowLoginModal(false)
@@ -732,9 +775,13 @@ export default function App() {
         if (auth.currentUser?.uid === user.uid) {
           setSavedArticles(current => [...current, ...entries.filter(entry => !current.some(item => item.analysisId === entry.analysisId))]
             .sort((a, b) => b.savedAt - a.savedAt))
+          setHistoryLoading(false)
         }
       }).catch(() => {
-        if (auth.currentUser?.uid === user.uid) setHistoryError('Não foi possível carregar o histórico. Confira o Firestore e suas regras de acesso.')
+        if (auth.currentUser?.uid === user.uid) {
+          setHistoryError('Não foi possível carregar o histórico. Confira o Firestore e suas regras de acesso.')
+          setHistoryLoading(false)
+        }
       })
     }
   }, error => setApiError(authErrorMessage(error))), [])
@@ -742,6 +789,47 @@ export default function App() {
   const handleLogout = async () => {
     try { await logout() }
     catch (error) { setApiError(authErrorMessage(error)) }
+  }
+
+  const openHistoryItem = async (id: string) => {
+    const uid = auth.currentUser?.uid
+    if (!uid || historyBusyId || busy.current) return
+    setHistoryBusyId(`open:${id}`)
+    setHistoryError('')
+    try {
+      const job = await getSavedAnalysis(id, new AbortController().signal)
+      if (auth.currentUser?.uid !== uid) return
+      const data = mapResult(job)
+      data.healthArea = detectHealthArea(data.title)
+      setResult(data)
+      setJobId(id)
+      setApiError('')
+      setStatus('done')
+      setShowSaved(false)
+      window.requestAnimationFrame(() => document.getElementById('artfact-analysis-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+    } catch (error) {
+      if (auth.currentUser?.uid === uid) setHistoryError(error instanceof Error ? error.message : 'Não foi possível reabrir esta análise.')
+    } finally {
+      if (auth.currentUser?.uid === uid) setHistoryBusyId('')
+    }
+  }
+
+  const removeHistoryItem = async (id: string) => {
+    const uid = auth.currentUser?.uid
+    if (!uid || historyBusyId) return
+    if (!window.confirm('Excluir este item do histórico? O relatório do backend não será apagado.')) return
+    setHistoryBusyId(`delete:${id}`)
+    setHistoryError('')
+    try {
+      await deleteHistoryEntry(uid, id)
+      if (auth.currentUser?.uid === uid) {
+        setSavedArticles(current => current.filter(item => item.analysisId !== id))
+      }
+    } catch {
+      if (auth.currentUser?.uid === uid) setHistoryError('Não foi possível excluir o registro. Confira sua conexão e as regras do Firestore.')
+    } finally {
+      if (auth.currentUser?.uid === uid) setHistoryBusyId('')
+    }
   }
 
   const receiveJob = (job: Job) => {
@@ -758,8 +846,11 @@ export default function App() {
       const currentUser = auth.currentUser
       if (currentUser) {
         const entry = makeSavedArticle(data)
-        setSavedArticles(prev => [entry, ...prev.filter(item => item.analysisId !== entry.analysisId)])
-        void saveHistory(currentUser.uid, entry).catch(() => {
+        void saveHistory(currentUser.uid, entry).then(() => {
+          if (auth.currentUser?.uid === currentUser.uid) {
+            setSavedArticles(prev => [entry, ...prev.filter(item => item.analysisId !== entry.analysisId)].sort((a, b) => b.savedAt - a.savedAt))
+          }
+        }).catch(() => {
           if (auth.currentUser?.uid === currentUser.uid) setHistoryError('Não foi possível salvar a análise no histórico. Verifique as regras do Firestore.')
         })
       }
@@ -1092,7 +1183,7 @@ export default function App() {
         )}
 
         {/* Result */}
-        {status === 'done' && result && <AnalysisCard result={result} />}
+        {status === 'done' && result && <div id="artfact-analysis-result"><AnalysisCard result={result} /></div>}
 
         {/* Login banner */}
         {showBanner && !isLoggedIn && status === 'done' && (
@@ -1311,6 +1402,10 @@ export default function App() {
         <SavedPanel
           articles={savedArticles}
           error={historyError}
+          loading={historyLoading}
+          busyId={historyBusyId}
+          onOpen={id => void openHistoryItem(id)}
+          onDelete={id => void removeHistoryItem(id)}
           onClose={() => setShowSaved(false)}
         />
       )}

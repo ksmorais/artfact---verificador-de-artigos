@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeReference, filePayload, parseJob, mapResult, startAnalysis, pollAnalysis, selectClaims, extractedClaims } from '../src/api.ts'
+import { normalizeReference, filePayload, parseJob, mapResult, startAnalysis, pollAnalysis, selectClaims, extractedClaims, getSavedAnalysis } from '../src/api.ts'
 
 test('URLs/DOI válidos e protocolos bloqueados', () => {
   assert.equal(normalizeReference('10.1000/example'), '10.1000/example')
@@ -99,4 +99,28 @@ test('trechos científicos preservam identificadores e rejeitam links não segur
   assert.equal(findings[0].url, 'https://pubmed.ncbi.nlm.nih.gov/123456/')
   assert.equal(findings[1].url, 'https://example.org/source')
   assert.equal(findings[1].doi, '10.1234/example')
+})
+
+test('historico consulta resultado original, sem disparar nova analise', async () => {
+  const original = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), method: options.method })
+    return Response.json({ analysis_id: 'historico-1', status: 'SUCCEEDED',
+      result: { claim_analyses: [{ status: 'SUCCEEDED', claim: { text: 'Teste' },
+        result: { user_summary: { status: 'INCONCLUSIVE' } } }] } })
+  }
+  try {
+    const job = await getSavedAnalysis('historico-1', new AbortController().signal)
+    assert.equal(job.status, 'SUCCEEDED')
+    assert.deepEqual(calls, [{ url: '/api/v1/analyses/historico-1', method: 'GET' }])
+  } finally { globalThis.fetch = original }
+})
+
+test('historico diferencia registro Firestore de resultado ausente no Flask', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () => Response.json({ error: { message: 'Análise não encontrada' } }, { status: 404 })
+  try {
+    await assert.rejects(getSavedAnalysis('antigo', new AbortController().signal), /registro está no Firestore/)
+  } finally { globalThis.fetch = original }
 })

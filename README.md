@@ -32,7 +32,7 @@ Abra http://localhost:8443. O proxy Vite envia `/api/*` à porta 5000. O backend
 4. Em **Firestore Database > Rules**, mescle e publique o conteúdo de `firestore.rules`. O arquivo no GitHub, isoladamente, **não aplica regras no Firebase**.
 5. Teste com dois usuários distintos para verificar o isolamento do histórico.
 
-A interface guarda apenas metadados de até 50 análises recuperadas por usuário e não envia senhas ao backend próprio. **A API Flask ainda não valida tokens Firebase para proteger análises**: antes de usar artigos privados com dados pessoais, implemente autorização server-side.
+A interface guarda apenas metadados de até 50 análises recuperadas por usuário, permite buscar por título, reabrir resultados mantidos pelo backend e excluir entradas; não envia senhas ao backend próprio. Se o backend original não possuir mais a análise, o registro continua visível, mas o relatório não poderá ser reaberto. **A API Flask ainda não valida tokens Firebase para proteger análises**: antes de usar artigos privados com dados pessoais, implemente autorização server-side.
 
 ## Indicadores
 A porcentagem apresentada é **cobertura do material pesquisado**, não um score de verdade, qualidade ou credibilidade. Ausência de dado aparece como `N/D`. Trechos devem ser conferidos na fonte e no relatório.

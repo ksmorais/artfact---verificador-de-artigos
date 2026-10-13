@@ -13,10 +13,15 @@
 
 ## Etapa 3 — histórico (implementada no frontend, exige Firebase)
 - Salvar somente metadados de cada análise em `users/{uid}/analyses/{analysisId}`.
-- Ler as últimas 50 análises da conta. Nunca persistir PDF bruto, alegações completas, token ou chave.
+- Ler as últimas 50 análises da conta, filtrar por área e pesquisar por título/fonte.
+- Reabrir o resultado completo pelo ID salvo, quando o mesmo backend Flask ainda retém a análise.
+- Excluir entradas individualmente, removendo só os metadados do Firestore (não os jobs originais no Flask).
+- Mostrar estados de carregamento e erros de permissão, salvamento ou análise não localizada.
+- Nunca persistir PDF bruto, alegações completas, token ou chave.
 - Criar o banco Firestore no Firebase Console, inicialmente em **modo de produção**.
 - Em Firestore Database > Rules, **mesclar e publicar** as regras em `firestore.rules` antes de ativar o histórico. Este arquivo no GitHub não publica regras automaticamente.
 - Testar com duas contas: cada uma pode ler somente seu próprio histórico.
+- **Limitação:** o Firestore mantém o registro, mas os resultados completos continuam no backend científico original (SQLite local). Se esse backend for substituído, reinicializado sem dados ou estiver inacessível, o registro aparecerá no histórico sem conseguir abrir o relatório.
 - A API Flask **continua sem autenticação** de análises: integrar Firebase Admin no servidor e verificar propriedade de cada recurso ANTES de oferecer dados privados por ela. O controle Firestore não protege endpoints Flask.
 
 ## Etapa 4 — UX e qualidade (parcialmente implementada)

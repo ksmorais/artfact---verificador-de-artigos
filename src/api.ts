@@ -134,4 +134,22 @@ export function mapResult(job: Job): AnalysisResult {
     credibilityScore: null, claims, indicators: summarizeIndicators(claims.filter((_c, i) => entries[i].status !== 'FAILED').map(c => c.indicators)), redFlags: [...flags], supportingLinks: [...links].map(([url, label]) => ({ url, label })), analysisId: job.analysis_id,
     articleUrl: safeUrl(input) }
 }
+/** Reabre um resultado salvo pelo identificador, quando o mesmo backend ainda o mantém. */
+export async function getSavedAnalysis(id: string, signal: AbortSignal): Promise<Job> {
+  if (!id || id.length > 128) throw new Error('Identificador de análise inválido.')
+  let job: Job
+  try {
+    job = await request(`/analyses/${encodeURIComponent(id)}`, signal)
+  } catch (error) {
+    if (error instanceof Error && /404|não encontrada|not found/i.test(error.message)) {
+      throw new Error('O registro está no Firestore, mas o resultado completo não foi encontrado neste backend. Confira se está usando o servidor original.')
+    }
+    throw error
+  }
+  if (job.status !== 'SUCCEEDED' || !job.result) {
+    throw new Error('O histórico foi localizado, mas o resultado completo ainda não está disponível no backend.')
+  }
+  return job
+}
+
 export function reportUrl(id: string) { return `${base}/analyses/${encodeURIComponent(id)}/report.md` }
