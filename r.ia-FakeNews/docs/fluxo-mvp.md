@@ -1,0 +1,264 @@
+# Fluxo principal do MVP
+
+## Escopo vigente: branch `refactor/pubmed-only-mvp`
+
+O usuário envia PMID, DOI, link de artigo do PubMed ou PDF/imagem. A aplicação
+resolve referências somente pelo PubMed/PMC. Se não conseguir obter o artigo,
+solicita o PDF; não envia a URL para navegação do Gemini.
+
+A leitura extrai informações e alegações do documento para encontrar estudos
+relacionados exclusivamente no PubMed. O PMC fornece texto completo quando
+disponível; caso contrário, a comparação fica limitada ao abstract do PubMed.
+O Gemini continua responsável pela classificação textual e pelos resumos. Isso
+ainda não demonstra relevância clínica nem correção das interpretações.
+
+Os tipos de publicação são apresentados como metadados `PublicationType` do PubMed,
+sem afirmar que confirmam o desenho ou a qualidade metodológica. Dados extraídos
+pelo Gemini só são conservados quando aparecem literalmente no texto disponível,
+com sua proveniência. Essa checagem comprova a ocorrência, não a interpretação.
+Campos sem respaldo são omitidos; a cobertura da leitura continua visível.
+
+O MVP não produz triagem de risco de viés, comparabilidade PICO ou certeza estimada.
+`ASSESS_METHODOLOGY` é uma configuração legada ignorada pelo factory, inclusive se
+estiver em `true`. A síntese é um balanço descritivo de trechos. Artigos retratados
+não contribuem para esse balanço. Financiamento e conflitos aparecem somente quando
+há declaração acompanhada de citação localizada no texto.
+
+O factory `create_pubmed_only_app` é usado pelo entrypoint existente
+`create_live_retrieval_app`. Os módulos e notebooks abaixo registram o trabalho
+anterior e não representam todos os componentes ativos nesta branch.
+
+Validação de software: `tests/test_pubmed_only_mvp.py`, junto à suíte existente.
+Avaliação com ground truth e treinamento supervisionado permanecem pendentes.
+
+## Histórico da implementação anterior
+
+## Objetivo
+
+Permitir que o usuário verifique uma alegação sobre saúde com base em evidências científicas.
+
+## Entrada
+
+- Alegação sobre saúde em texto, obrigatória.
+- Link ou DOI de um artigo científico, opcional.
+
+**Etapa concluída:** validação da entrada.
+
+**Comprovação:** [`notebooks/01_validacao_entrada.ipynb`](../notebooks/01_validacao_entrada.ipynb).
+
+**Etapa concluída:** preparação da alegação para busca científica.
+
+**Comprovação:** [`notebooks/02_validacao_plano_busca.ipynb`](../notebooks/02_validacao_plano_busca.ipynb).
+
+**Etapa concluída:** consultar o PubMed e normalizar os artigos encontrados.
+
+**Comprovação:** [`notebooks/03_validacao_pubmed.ipynb`](../notebooks/03_validacao_pubmed.ipynb).
+
+**Etapa concluída:** conferir a identidade dos artigos por DOI e metadados externos.
+
+**Comprovação:** [`notebooks/04_validacao_identidade_crossref.ipynb`](../notebooks/04_validacao_identidade_crossref.ipynb).
+
+**Etapa concluída:** obter resumo e texto completo disponível no PubMed Central.
+
+**Comprovação:** [`notebooks/05_validacao_conteudo_pmc.ipynb`](../notebooks/05_validacao_conteudo_pmc.ipynb).
+
+**Etapa concluída:** dividir o conteúdo em trechos rastreáveis para recuperação de evidências.
+
+**Comprovação:** [`notebooks/06_validacao_chunking.ipynb`](../notebooks/06_validacao_chunking.ipynb).
+
+**Etapa concluída:** recuperar e ordenar lexicalmente os trechos mais relevantes para a alegação.
+
+**Comprovação:** [`notebooks/07_validacao_recuperacao_lexical.ipynb`](../notebooks/07_validacao_recuperacao_lexical.ipynb).
+
+**Etapa concluída:** recuperar semanticamente trechos em inglês a partir de uma alegação em português e comparar a seleção com a linha de base lexical.
+
+**Comprovação:** [`notebooks/08_validacao_recuperacao_semantica.ipynb`](../notebooks/08_validacao_recuperacao_semantica.ipynb).
+
+**Etapa concluída:** combinar BM25 e embeddings em um ranking híbrido por posições, sem somar scores incompatíveis.
+
+**Comprovação:** [`notebooks/09_validacao_ranking_hibrido.ipynb`](../notebooks/09_validacao_ranking_hibrido.ipynb).
+
+**Etapa concluída:** extrair afirmações científicas rastreáveis e estruturar pares de comparação ainda não classificados.
+
+**Comprovação:** [`notebooks/10_validacao_extracao_evidencias.ipynb`](../notebooks/10_validacao_extracao_evidencias.ipynb).
+
+**Etapa concluída:** classificar cada par como apoio, contradição, evidência neutra ou incerta, preservando probabilidades, modelo, justificativa e proveniência.
+
+**Comprovação:** [`notebooks/11_validacao_classificacao_relacoes.ipynb`](../notebooks/11_validacao_classificacao_relacoes.ipynb).
+
+**Etapa concluída:** agregar primeiro por artigo e depois entre artigos, ponderando perfis explícitos de qualidade e preservando conflitos e insuficiência de evidência.
+
+**Comprovação:** [`notebooks/12_validacao_sintese_evidencias.ipynb`](../notebooks/12_validacao_sintese_evidencias.ipynb).
+
+**Etapa concluída:** enriquecer os perfis de qualidade com validações externas de identidade, retratação, protocolo aplicável, desenho declarado e disponibilidade de dados.
+
+**Comprovação:** [`notebooks/13_validacao_qualidade_artigo.ipynb`](../notebooks/13_validacao_qualidade_artigo.ipynb).
+
+**Etapa concluída:** aplicar o AMSTAR 2 à revisão sistemática, registrando evidência por item e derivando a confiança por falhas críticas, sem escore numérico.
+
+**Comprovação:** [`notebooks/14_validacao_amstar2.ipynb`](../notebooks/14_validacao_amstar2.ipynb).
+
+**Etapa concluída:** incorporar o perfil metodológico avaliado à síntese e gerar uma resposta explicável ao usuário, separando sinal, força da evidência, confiança metodológica, limitações e fontes.
+
+**Comprovação:** [`notebooks/15_validacao_resposta_explicavel.ipynb`](../notebooks/15_validacao_resposta_explicavel.ipynb).
+
+**Etapa concluída:** encapsular o fluxo em um serviço de aplicação que busque e processe múltiplos artigos independentes, tolere falhas isoladas e devolva o relatório estruturado.
+
+**Comprovação:** [`notebooks/17_validacao_orquestracao_multiartigo.ipynb`](../notebooks/17_validacao_orquestracao_multiartigo.ipynb).
+
+**Etapa concluída:** expor o serviço por uma API HTTP assíncrona, com contrato de entrada, consulta de progresso, resultado estruturado e erros seguros.
+
+**Comprovação:** [`notebooks/18_validacao_api_http.ipynb`](../notebooks/18_validacao_api_http.ipynb).
+
+**Etapa concluída:** impedir que evidências inteiramente incertas sustentem uma conclusão e excluir artigos com retratação confirmada da síntese, mantendo ambos os casos auditáveis.
+
+**Comprovação:** [`notebooks/19_validacao_confiabilidade.ipynb`](../notebooks/19_validacao_confiabilidade.ipynb).
+
+**Etapa concluída:** revisar a interpretação das evidências por dois papéis independentes — pesquisador e crítico — e submeter suas saídas a um árbitro determinístico que valida citações, impede a promoção de evidência insuficiente e explicita a necessidade de abstenção.
+
+**Comprovação:** [`notebooks/20_validacao_pesquisa_adversarial.ipynb`](../notebooks/20_validacao_pesquisa_adversarial.ipynb).
+
+Essa etapa valida regras de software com agentes controlados; não representa validação clínica nem demonstra que uma IA possa validar outra IA.
+
+**Etapa concluída:** auditar todas as fontes sugeridas pelo grupo, separando descoberta, conteúdo, validação, plataformas editoriais e conferência manual. O teste ao vivo confirmou acesso a PubMed, PMC, ClinicalTrials.gov, Crossref/Retraction Watch, OpenAlex, DataCite, catálogo SciELO, Springer Nature Meta, Springer Nature Open Access e ScienceDirect.
+
+**Comprovação:** [`notebooks/21_validacao_fontes_cientificas.ipynb`](../notebooks/21_validacao_fontes_cientificas.ipynb).
+
+Nature não é contada como índice independente, e Google Acadêmico permanece fora da automação por não possuir uma API pública suportada no projeto. A disponibilidade de uma fonte não comprova cobertura, relevância nem qualidade científica.
+
+**Etapa concluída:** implementar a busca federada em PubMed, OpenAlex e periódicos da lista SciELO via OpenAlex, normalizando os resultados, deduplicando por DOI, PMID ou título/ano/primeiro autor e combinando posições por Reciprocal Rank Fusion. Falhas isoladas não interrompem as demais fontes, e trabalhos sem PMID permanecem auditáveis sem serem enviados incorretamente ao PMC.
+
+**Comprovação:** [`notebooks/22_validacao_busca_federada.ipynb`](../notebooks/22_validacao_busca_federada.ipynb).
+
+O uso de SciELO via OpenAlex é explicitado na proveniência. O ArticleMeta permanece útil para catálogo e metadados, mas não é apresentado como mecanismo de busca temática. A validação controlada comprova as regras de software; ela não mede recall clínico nem qualidade dos resultados reais.
+
+**Etapa concluída:** processar PDFs localmente com LiteParse antes de enviar o texto ao Gemini, preservando o nome do parser e a contagem de páginas. A ingestão rejeita documentos sem texto suficiente em vez de inferir conteúdo ausente. Chamadas Gemini passam a repetir automaticamente erros temporários `429`, `5xx`, timeout e falhas de rede.
+
+**Comprovação:** [`notebooks/23_validacao_ingestao_liteparse.ipynb`](../notebooks/23_validacao_ingestao_liteparse.ipynb).
+
+Essa etapa cria a base de ingestão para uma experiência semelhante ao NotebookLM, mas ainda não implementa uma biblioteca persistente de múltiplos documentos nem perguntas conversacionais sobre o acervo.
+
+**Etapa concluída:** corrigir a busca temática no OpenAlex, expandir links PubMed com os vizinhos computacionais oficiais do ELink e separar compatibilidade textual de confiança na cobertura da verificação. O índice considera cobertura dos abstracts, quantidade de comparações diretas, atualidade, citações e ramificação; ensaios clínicos são marcados como não aplicáveis quando o artigo é de ciência básica.
+
+**Comprovação:** [`notebooks/24_validacao_verificacao_artigo.ipynb`](../notebooks/24_validacao_verificacao_artigo.ipynb).
+
+Resultados neutros são apresentados como contexto relacionado, não como confirmação. A interface nunca interpreta o índice como probabilidade de verdade nem rotula automaticamente o artigo como verdadeiro ou falso.
+
+**Etapa concluída:** priorizar texto completo do PMC, PDFs enviados e documentos abertos indicados pelo OpenAlex; extrair seções e tabelas, selecionar Resultados/Conclusão e preservar URL, seção, página e identificador de cada trecho citado. Quando XML ou HTML não oferece paginação física, a resposta declara a página como indisponível em vez de estimá-la. O abstract permanece como fallback identificado.
+
+**Comprovação:** [`notebooks/25_validacao_texto_completo_rastreavel.ipynb`](../notebooks/25_validacao_texto_completo_rastreavel.ipynb).
+
+**Etapa concluída:** consolidar a saída técnica em uma narrativa orientada ao usuário: alegação analisada, alcance real da leitura, balanço entre compatibilidade e divergência, interpretação cautelosa, trechos rastreáveis, limitações e próximo passo. Métricas de cobertura, meta-análises, ensaios e alertas permanecem disponíveis em detalhes técnicos, sem competir com a mensagem principal.
+
+**Comprovação:** [`notebooks/26_validacao_saida_coerente.ipynb`](../notebooks/26_validacao_saida_coerente.ipynb).
+
+**Etapa concluída:** extrair até quatro alegações atômicas do artigo, remover duplicatas deterministicamente, preservar o trecho, a seção e a página de origem e executar uma busca e uma análise independentes para cada alegação. A interface permite alternar entre os resultados sem misturar artigos, contagens ou conclusões de alegações diferentes.
+
+**Comprovação:** [`notebooks/27_validacao_multiplas_alegacoes.ipynb`](../notebooks/27_validacao_multiplas_alegacoes.ipynb).
+
+**Etapa concluída:** remover o índice percentual geral da apresentação e separar cobertura da busca, compatibilidade das evidências e confiança metodológica. Cobertura e compatibilidade usam contagens e denominadores explícitos; confiança metodológica é categórica e mostra a distribuição dos níveis. Citações e ramificações não aumentam a qualidade metodológica, e retratações geram alerta grave em vez de serem diluídas em uma média.
+
+**Comprovação:** [`notebooks/28_validacao_indicadores_separados.ipynb`](../notebooks/28_validacao_indicadores_separados.ipynb).
+
+**Etapa concluída:** classificar o desenho do estudo pela precedência `PublicationType do PubMed → identificador de ensaio → declaração explícita no texto → tipo documental Crossref → fallback do Gemini`. A ficha do artigo enviado separa identidade, consistência de autores, status editorial, retratação/correções, desenho e origem da classificação, amostra, protocolos, financiamento, conflitos, dados, linguagem absoluta e consistência ainda não avaliada entre resultados e conclusão. Ausências permanecem desconhecidas ou não encontradas, sem preenchimento pelo modelo.
+
+**Comprovação:** [`notebooks/29_validacao_ficha_artigo.ipynb`](../notebooks/29_validacao_ficha_artigo.ipynb).
+
+**Etapa concluída:** ampliar cada busca por alegação com consulta temática, vocabulário biomédico rastreável, descritores MeSH candidatos, revisões sistemáticas/meta-análises, DOI e primeiro autor. O fluxo também reúne vizinhos do PubMed e referências, citações e trabalhos relacionados do OpenAlex. Um reranker conservador exige cobertura dos conceitos centrais no título, registra pontuação, correspondências e motivos, e exclui coincidências lexicais fracas antes da análise de texto. Ligações e citações ampliam a cobertura, mas não são usadas como prova de qualidade.
+
+**Comprovação:** [`notebooks/30_validacao_busca_expandida_reranking.ipynb`](../notebooks/30_validacao_busca_expandida_reranking.ipynb).
+
+**Próxima etapa:** construir um conjunto de avaliação conhecido e medir Recall@K, Precision@K, qualidade dos trechos, citações inexistentes, classificação, abstenção correta e estabilidade entre execuções.
+
+## Fluxo
+
+1. O usuário envia um link/DOI, PDF ou imagem de um artigo.
+2. O sistema recupera ou interpreta o documento e extrai a alegação principal.
+3. O sistema busca artigos científicos independentes relacionados.
+4. O sistema seleciona e analisa as evidências encontradas.
+5. O sistema compara as evidências com a alegação extraída.
+6. O sistema gera um relatório para o usuário, com alertas e fontes conferíveis.
+
+## Saída
+
+O relatório deve apresentar:
+
+- conclusão sobre a compatibilidade da alegação com as evidências;
+- justificativa em linguagem clara;
+- limitações da análise;
+- links para as fontes utilizadas.
+
+## Resumo visual
+
+```text
+Link, PDF ou imagem do artigo
+            ↓
+Leitura + alegação extraída
+            ↓
+ Busca de evidências independentes
+            ↓
+ Análise e comparação
+            ↓
+Relatório + justificativa + fontes
+```
+
+
+## Biblioteca e comparação com referências escolhidas
+
+A leitura inicial guarda a fonte recuperada na biblioteca e mantém o snapshot preparado.
+Fontes de análises antigas que já possuem snapshot também são incluídas na biblioteca,
+sem refazer consultas ou apagar as notas existentes.
+Depois da primeira investigação, é possível escolher outras alegações, repetir uma
+comparação ou acrescentar alegações próprias. As demais comparações permanecem no
+mesmo trabalho. Cada alegação tem estado próprio (`QUEUED`, `RUNNING`, `SUCCEEDED`
+ou `FAILED`); uma falha não descarta os resultados das outras. O polling leve inclui
+`claim_progress`. Novas rodadas também funcionam após reiniciar a aplicação.
+
+A seleção aceita até 10 alegações por rodada. O campo opcional `comparison` escolhe
+`AUTOMATIC` ou `MANUAL`. No modo manual, informe `article_ids` da biblioteca,
+`references` (PMIDs, links do PubMed ou DOIs) e/ou `files` (arquivos no formato já usado
+em `article_file`), com até 20 documentos no total. As fontes são recuperadas uma vez,
+guardadas e reutilizadas entre as alegações. Não há busca temática nesse modo; o
+relatório registra que o conjunto foi escolhido pelo usuário. Duplicatas são removidas
+e o artigo alvo é rejeitado como referência contra si próprio.
+
+Uma alegação própria usa `claim_id` começando por `user-`, `text` e `source: "USER"`.
+Ela fica no snapshot para futuras rodadas, com `user_supplied: true` e sem citação
+atribuída aos autores.
+
+Endpoints da biblioteca:
+
+- `GET /api/v1/library/articles?q=...`: lista e pesquisa metadados sem enviar o texto inteiro.
+- `POST /api/v1/library/articles`: guarda uma referência/arquivo ou a fonte de `analysis_id`.
+- `GET /api/v1/library/articles/<id>`: abre o documento guardado, com páginas e seções.
+- `GET /api/v1/library/articles/<id>/file`: baixa o arquivo original quando ele foi recebido.
+- `PATCH /api/v1/library/articles/<id>`: atualiza `notes` e `tags`.
+- `POST /api/v1/library/articles/<id>/analyses`: inicia uma leitura usando o texto guardado.
+
+As tabelas `library_articles` e `library_text` (FTS5) compartilham o arquivo SQLite dos
+trabalhos. A biblioteca é local à instalação, sem separação por conta. A busca atual é
+textual; não requer embeddings, FAISS ou download de modelos adicionais. Texto completo
+já guardado não é substituído por uma leitura posterior limitada ao resumo.
+
+## Persistência vetorial opcional
+
+O padrão da web continua BM25: `VECTOR_STORE_BACKEND=memory` e
+`HYBRID_RETRIEVAL_ENABLED=false`. Para ativar a recuperação híbrida persistente,
+use `VECTOR_STORE_BACKEND=qdrant` e `HYBRID_RETRIEVAL_ENABLED=true`. O índice em
+memória permanece disponível com `memory` e a flag híbrida habilitada.
+
+O fluxo preserva os conectores NCBI e a apresentação factual. Qdrant só localiza
+chunks dos documentos escolhidos; não valida alegações, desenho de estudo nem
+confiança metodológica. Modelo, dimensão, revisão, texto, seção, página, fonte,
+escopo e versões do parser/chunker ficam no payload. Novas alegações reutilizam
+os vetores; cada consulta recebe seu embedding. Ambos os rankings são fundidos
+por RRF com posições e contribuições disponíveis nos trechos selecionados.
+
+Por padrão, falhas de configuração, embeddings ou conexão geram erros claros.
+`VECTOR_STORE_FAILURE_MODE=bm25` permite retorno ao BM25, com aviso no resultado
+e logs estruturados. O texto recuperado vai ao Gemini como dados não confiáveis,
+separado da instrução de sistema; IDs/citações inválidos resultam em `UNCERTAIN`.
+A biblioteca continua textual (FTS5), e SQLite guarda os documentos e análises.
+
+Veja [recuperacao-vetorial.md](recuperacao-vetorial.md) para contratos, escopos,
+ativação, avaliação offline e limitações.

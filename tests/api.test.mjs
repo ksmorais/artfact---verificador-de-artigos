@@ -1,0 +1,54 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { normalizeReference, filePayload, parseJob, mapResult, startAnalysis, pollAnalysis, selectClaims, extractedClaims } from '../src/api.ts'
+
+test('URLs/DOI válidos e protocolos bloqueados', () => {
+  assert.equal(normalizeReference('10.1000/example'), '10.1000/example')
+  assert.equal(normalizeReference('pubmed.ncbi.nlm.nih.gov/123/'), 'https://pubmed.ncbi.nlm.nih.gov/123/')
+  assert.throws(() => normalizeReference('javascript:alert(1)'))
+})
+test('arquivo segue contrato base64 e valida tipo/tamanho', async () => {
+  const p = await filePayload(new File(['%PDF-test'], 'estudo.pdf', { type: 'application/pdf' }))
+  assert.equal(atob(p.article_file.data_base64), '%PDF-test')
+  await assert.rejects(filePayload(new File(['x'], 'x.svg', { type: 'image/svg+xml' })))
+  await assert.rejects(filePayload(new File([], 'x.png', { type: 'image/png' })))
+  await assert.rejects(filePayload(new File([new Uint8Array(25 * 1024 * 1024 + 1)], 'x.png', { type: 'image/png' })))
+})
+test('não aceita resposta inesperada', () => {
+  assert.throws(() => parseJob({ status: 'ok' }))
+  assert.throws(() => mapResult({ analysis_id: '1', status: 'SUCCEEDED', result: {} }))
+})
+test('múltiplas alegações preservam divergência e falhas sem inventar score', () => {
+  const job = { analysis_id: '1', status: 'SUCCEEDED', result: { claim_analyses: [
+    { claim: { text: 'A' }, status: 'SUCCEEDED', result: { user_summary: { status: 'PREDOMINANTLY_COMPATIBLE', summary: 'Resumo A' }, articles: [{ title: 'Estudo', url: 'javascript:bad' }] } },
+    { claim: { text: 'B' }, status: 'SUCCEEDED', result: { user_summary: { status: 'POTENTIAL_DIVERGENCE', summary: 'Resumo B' }, articles: [{ title: 'Estudo B', pmid: '123' }] } },
+    { claim: { text: 'C' }, status: 'FAILED', error: { message: 'Falha parcial' } },
+  ] } }
+  const result = mapResult(job)
+  assert.equal(result.overallVerdict, 'uncertain')
+  assert.equal(result.credibilityScore, null)
+  assert.equal(result.claims[2].note, 'Falha parcial')
+  assert.equal(result.supportingLinks.length, 1)
+  assert.equal(result.claims[1].verdict, 'fake')
+})
+test('cliente envia contrato, consulta estado leve, seleciona alegações e informa erro HTTP', async () => {
+  const original = globalThis.fetch, requests = []
+  const signal = new AbortController().signal
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, ...options })
+    if (options.method === 'POST') return Response.json({ analysis_id: 'abc', status: 'QUEUED', progress: 0 }, { status: 202 })
+    return Response.json({ analysis_id: 'abc', status: 'AWAITING_CLAIM_SELECTION', progress: 40, result: { submitted_article: { claims: [{ claim_id: 'c1', text: 'Alegação teste' }] } } })
+  }
+  try {
+    const created = await startAnalysis('10.1000/example', null, signal)
+    const job = await pollAnalysis(created.analysis_id, signal, () => {})
+    await selectClaims(job.analysis_id, extractedClaims(job), signal)
+    assert.deepEqual(JSON.parse(requests[0].body), { article_reference: '10.1000/example' })
+    assert.ok(requests[1].url.endsWith('?view=status'))
+    assert.deepEqual(JSON.parse(requests[3].body), { claims: [{ claim_id: 'c1', text: 'Alegação teste' }], depth: 'QUICK' })
+    globalThis.fetch = async () => Response.json({ error: { message: 'Chave ausente' } }, { status: 503 })
+    await assert.rejects(startAnalysis('10.1000/example', null, signal), /Chave ausente/)
+    globalThis.fetch = async () => Response.json({ analysis_id: 'abc', status: 'FAILED', progress: 100, result: {}, error: { message: 'Falha no pipeline' } })
+    await assert.rejects(pollAnalysis('abc', signal, () => {}), /Falha no pipeline/)
+  } finally { globalThis.fetch = original }
+})
