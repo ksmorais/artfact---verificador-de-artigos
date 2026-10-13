@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, type FormEvent } from 'react'
 import { startAnalysis, pollAnalysis, selectClaims, extractedClaims, mapResult, reportUrl, type Job, type ExtractedClaim, type AnalysisResult, type Verdict } from './api'
 import { onAuthStateChanged } from 'firebase/auth'
-import { auth, loginWithGoogle, logout, authErrorMessage } from './firebase'
+import { auth, loginWithGoogle, loginWithEmail, registerWithEmail, requestPasswordReset, logout, authErrorMessage } from './firebase'
 import pubmedGovLogo from './assets/pubmed-gov-logo.png'
 import type { Indicators, OverallIndicators } from './scientificIndicators.ts'
 
@@ -304,23 +304,88 @@ function TermsModal({ onClose }: { onClose: () => void }) {
 
 // ── Login Modal ──────────────────────────────────────────────
 function LoginModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<'login' | 'register' | 'reset'>('login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
-  const login = async () => {
+  const [message, setMessage] = useState('')
+  const switchStep = (next: 'login' | 'register' | 'reset') => {
+    setStep(next)
+    setError('')
+    setMessage('')
+    setPassword('')
+  }
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (pending) return
+    setError('')
+    setMessage('')
+    if (step === 'register' && !name.trim()) { setError('Informe seu nome para se cadastrar.'); return }
+    if (step !== 'reset' && password.length < 6) { setError('A senha precisa ter pelo menos 6 caracteres.'); return }
+    setPending(true)
+    try {
+      if (step === 'reset') {
+        await requestPasswordReset(email)
+        setMessage('Se este e-mail estiver cadastrado, você receberá as instruções de recuperação.')
+        return
+      }
+      if (step === 'register') await registerWithEmail(name, email, password)
+      else await loginWithEmail(email, password)
+      onClose()
+    } catch (e) {
+      setError(authErrorMessage(e))
+    } finally {
+      setPending(false)
+    }
+  }
+  const googleLogin = async () => {
     if (pending) return
     setPending(true)
     setError('')
+    setMessage('')
     try { await loginWithGoogle(); onClose() }
     catch (e) { setError(authErrorMessage(e)) }
     finally { setPending(false) }
   }
   return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" role="dialog" aria-modal="true" aria-labelledby="login-title">
-    <div className="max-w-md rounded-lg p-6 bg-[--color-surface] border border-[--color-border] space-y-4">
-      <h2 id="login-title" className="font-semibold">Entrar na ArtFact</h2>
-      <p className="text-sm">Use sua conta Google. Na primeira entrada, seu usuário será criado automaticamente.</p>
+    <div className="w-full max-w-md rounded-lg p-6 bg-[--color-surface] border border-[--color-border] space-y-4">
+      <h2 id="login-title" className="font-semibold">{step === 'register' ? 'Criar conta na ArtFact' : step === 'reset' ? 'Recuperar senha' : 'Entrar na ArtFact'}</h2>
+      <p className="text-xs text-[--color-muted]">A autenticação é feita pelo Firebase. Não armazenamos sua senha no ArtFact.</p>
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-      <button autoFocus disabled={pending} onClick={() => void login()} className="w-full px-4 py-3 rounded bg-white text-black disabled:opacity-50">{pending ? 'Aguardando Google…' : 'Entrar com Google'}</button>
-      <button disabled={pending} onClick={onClose} className="text-sm underline">Continuar sem conta</button>
+      {message && <p role="status" className="text-sm text-[--color-teal]">{message}</p>}
+      <form onSubmit={e => void submit(e)} className="space-y-3">
+        {step === 'register' && <label className="block text-xs space-y-1">Nome
+          <input type="text" autoComplete="name" required maxLength={100} value={name} onChange={e => setName(e.target.value)}
+            disabled={pending} className="w-full p-3 bg-[--color-background] text-[--color-foreground] border border-[--color-border] rounded-md" />
+        </label>}
+        <label className="block text-xs space-y-1">E-mail
+          <input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}
+            disabled={pending} className="w-full p-3 bg-[--color-background] text-[--color-foreground] border border-[--color-border] rounded-md" />
+        </label>
+        {step !== 'reset' && <label className="block text-xs space-y-1">Senha
+          <input type="password" autoComplete={step === 'register' ? 'new-password' : 'current-password'} minLength={6} required value={password}
+            onChange={e => setPassword(e.target.value)} disabled={pending}
+            className="w-full p-3 bg-[--color-background] text-[--color-foreground] border border-[--color-border] rounded-md" />
+        </label>}
+        <button type="submit" disabled={pending} className="w-full rounded-md bg-[--color-teal] text-[--color-background] py-3 font-semibold disabled:opacity-50">
+          {pending ? 'Aguarde…' : step === 'register' ? 'Criar conta' : step === 'reset' ? 'Enviar recuperação' : 'Entrar com e-mail'}
+        </button>
+      </form>
+      {step !== 'reset' && <>
+        <div className="flex items-center gap-3 text-xs text-[--color-muted]"><span className="flex-1 border-t border-[--color-border]" />ou<span className="flex-1 border-t border-[--color-border]" /></div>
+        <button type="button" disabled={pending} onClick={() => void googleLogin()}
+          className="w-full px-4 py-3 rounded-md bg-white text-black font-semibold disabled:opacity-50">Entrar com Google</button>
+      </>}
+      <div className="flex flex-wrap gap-3 text-xs">
+        {step === 'login' && <>
+          <button disabled={pending} onClick={() => switchStep('register')} className="underline">Criar conta</button>
+          <button disabled={pending} onClick={() => switchStep('reset')} className="underline">Esqueci minha senha</button>
+        </>}
+        {step !== 'login' && <button disabled={pending} onClick={() => switchStep('login')} className="underline">Voltar ao login</button>}
+      </div>
+      <button type="button" disabled={pending} onClick={onClose} className="text-sm underline text-[--color-muted]">Continuar sem conta</button>
     </div>
   </div>
 }
