@@ -181,6 +181,7 @@ export function ScientificReader({ analysisId, onAdd, remaining }: {
     const text = claimText.trim()
     if (remaining <= 0) { setFeedback('O limite de 10 alegações foi atingido.'); return }
     if (text.length < 8 || text.length > 2000) { setFeedback('A alegação precisa ter de 8 a 2.000 caracteres.'); return }
+    if (quote.length === 1) { setFeedback('O trecho da fonte precisa ter ao menos 2 caracteres.'); return }
     onAdd({
       claim_id: 'user-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9),
       text, source: 'USER', ...(quote ? { quote } : {}), ...(section ? { section } : {}), ...(page ? { page } : {}),
