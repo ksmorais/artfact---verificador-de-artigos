@@ -194,6 +194,24 @@ class MultiRoundTests(unittest.TestCase):
         self.assertEqual(second.status_code, 202)
         self.assertEqual(len(service.get(analysis_id).result['claim_analyses']), 1)
 
+    def test_user_claim_preserves_selected_source_location(self):
+        client, service, analysis_id = self.setup_service()
+        payload = {'claims':[{
+            'claim_id':'user-selection',
+            'text':'O tratamento reduziu a dor no grupo estudado.',
+            'source':'USER',
+            'quote':'O tratamento reduziu a dor.',
+            'section':'Resultados',
+            'page':1,
+        }]}
+        response = client.post(f'/api/v1/article-analyses/{analysis_id}/claims', json=payload)
+        self.assertEqual(response.status_code, 202)
+        claim = next(item for item in service.get(analysis_id).workflow['extracted']['claims']
+                     if item['claim_id'] == 'user-selection')
+        self.assertEqual(claim['quote'], 'O tratamento reduziu a dor.')
+        self.assertEqual(claim['section'], 'Resultados')
+        self.assertEqual(claim['page'], 1)
+
     def test_manual_route_compares_multiple_library_articles_for_multiple_claims(self):
         from fatofake.gemini_evidence import GeminiEvidenceAssessment
         analyzer = Mock(model_name='controlled', assess_methodology=False)

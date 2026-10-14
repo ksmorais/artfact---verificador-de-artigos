@@ -5,7 +5,6 @@ from __future__ import annotations
 from .chunking import EvidenceChunk
 
 import json
-import re
 import ssl
 import time
 from dataclasses import dataclass
@@ -293,7 +292,7 @@ class GeminiEvidenceAnalyzer:
             raise ValueError("max_attempts deve ser maior ou igual a 1.")
         if retry_backoff < 0:
             raise ValueError("retry_backoff não pode ser negativo.")
-        self.api_key = api_key.strip()
+        self.api_key = api_key
         self.model_name = model_name
         self.timeout = timeout
         self.max_attempts = max_attempts
@@ -303,30 +302,6 @@ class GeminiEvidenceAnalyzer:
         self._ssl_context = ssl_context or default_ssl_context()
         self._post_json = post_json or self._request_json
 
-    def _http_error_message(self, error: HTTPError) -> str:
-        """Preserva o diagnóstico da API sem expor a chave de acesso."""
-        detail = ""
-        try:
-            body = error.read(65536).decode("utf-8", errors="replace")
-            parsed = json.loads(body)
-            api_error = parsed.get("error") if isinstance(parsed, dict) else None
-            if isinstance(api_error, dict):
-                status = api_error.get("status")
-                message = api_error.get("message")
-                detail = " — ".join(
-                    value for value in (status, message) if isinstance(value, str)
-                )
-        except (OSError, ValueError, AttributeError):
-            pass
-        finally:
-            error.close()
-        if not detail:
-            detail = "A API não forneceu uma mensagem JSON de erro utilizável."
-        detail = detail.replace(self.api_key, "[CHAVE OCULTA]")
-        detail = re.sub(r"AIza[0-9A-Za-z_-]+", "[CHAVE OCULTA]", detail)
-        detail = " ".join(detail.split())[:3000]
-        return f"Falha ao consultar o Gemini (HTTP {error.code}): {detail}"
-
     def _request_json(
         self,
         url: str,
@@ -335,7 +310,6 @@ class GeminiEvidenceAnalyzer:
         request_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         last_error: Exception | None = None
         result: Any = None
-        http_error_message: str | None = None
         for attempt in range(1, self.max_attempts + 1):
             request = Request(
                 url,
@@ -356,7 +330,6 @@ class GeminiEvidenceAnalyzer:
                 break
             except HTTPError as error:
                 last_error = error
-                http_error_message = self._http_error_message(error)
                 if error.code not in _TRANSIENT_HTTP_STATUS or attempt == self.max_attempts:
                     break
                 retry_after = error.headers.get("Retry-After") if error.headers else None
@@ -368,7 +341,6 @@ class GeminiEvidenceAnalyzer:
                     min(30.0, delay if delay is not None else self.retry_backoff * (2 ** (attempt - 1)))
                 )
             except (URLError, TimeoutError) as error:
-                http_error_message = None
                 last_error = error
                 if attempt == self.max_attempts:
                     break
@@ -385,11 +357,14 @@ class GeminiEvidenceAnalyzer:
                 raise GeminiAnalysisError(
                     "O Gemini está temporariamente indisponível após "
                     f"{self.max_attempts} tentativas (HTTP {last_error.code}). "
-                    "Tente novamente em alguns instantes. "
-                    f"{http_error_message or ''}"
-                ) from None
-            if http_error_message:
-                raise GeminiAnalysisError(http_error_message) from None
+                    "Tente novamente em alguns instantes."
+                ) from last_error
+            if isinstance(last_error, HTTPError) and last_error.code in {401, 403}:
+                raise GeminiAnalysisError(
+                    "A chave da API Gemini foi recusada "
+                    f"(HTTP {last_error.code}). Atualize GEMINI_API_KEY no arquivo .env "
+                    "e reinicie a aplicação."
+                ) from last_error
             raise GeminiAnalysisError(f"Falha ao consultar o Gemini: {last_error}") from last_error
         if not isinstance(result, dict):
             raise GeminiAnalysisError("O Gemini retornou uma resposta inesperada.")

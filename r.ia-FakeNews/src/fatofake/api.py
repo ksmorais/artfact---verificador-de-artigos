@@ -834,7 +834,9 @@ class AnalysisJobService:
         custom: list[ExtractedClaim] = []
         seen: set[str] = set()
         for item in selections:
-            if not isinstance(item, dict) or set(item) - {"claim_id", "text", "source"}:
+            if not isinstance(item, dict) or set(item) - {
+                "claim_id", "text", "source", "quote", "section", "page"
+            }:
                 raise InputValidationError(
                     "Cada seleção deve conter claim_id e text; alegações próprias podem informar source=USER."
                 )
@@ -851,7 +853,31 @@ class AnalysisJobService:
                     "O texto editado de cada alegação deve ter entre 8 e 2.000 caracteres."
                 )
             if claim_id not in originals:
-                original = ExtractedClaim(claim_id, claim_text.strip(), claim_text.strip(), edited=True, user_supplied=True)
+                quote = item.get("quote")
+                section = item.get("section")
+                page = item.get("page")
+                if quote is not None and (
+                    not isinstance(quote, str) or not 2 <= len(quote.strip()) <= 4000
+                ):
+                    raise InputValidationError("O trecho marcado deve ter entre 2 e 4.000 caracteres.")
+                if section is not None and (
+                    not isinstance(section, str) or len(section.strip()) > 300
+                ):
+                    raise InputValidationError("A seção do trecho marcado é inválida.")
+                if page is not None and (
+                    isinstance(page, bool) or not isinstance(page, int) or page < 1
+                ):
+                    raise InputValidationError("A página do trecho marcado é inválida.")
+                original = ExtractedClaim(
+                    claim_id,
+                    claim_text.strip(),
+                    claim_text.strip(),
+                    quote=quote.strip() if quote else None,
+                    section=section.strip() if section else None,
+                    page=page,
+                    edited=True,
+                    user_supplied=True,
+                )
                 originals[claim_id] = original
                 custom.append(original)
             original = originals[claim_id]

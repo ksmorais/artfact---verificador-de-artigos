@@ -370,14 +370,52 @@ class PubMedTopicClusterer:
         )
         return enriched
 
+    @staticmethod
+    def _fallback_enrichment(report, message):
+        """Mantém o painel informativo quando o enriquecimento remoto falha."""
+        enriched = deepcopy(report)
+        for cluster in enriched.get('clusters', ()):
+            count = int(cluster.get('count') or 0)
+            article_label = 'artigo' if count == 1 else 'artigos'
+            terms = [str(term).strip() for term in cluster.get('terms', ()) if str(term).strip()]
+            if cluster.get('is_outlier'):
+                cluster['label'] = 'Outros assuntos'
+                cluster['summary'] = (
+                    f'{count} {article_label} sem proximidade temática suficiente para entrar '
+                    'nos demais grupos desta página.'
+                )
+            elif terms:
+                subject = ', '.join(terms[:3])
+                cluster['summary'] = (
+                    f'{count} {article_label} com títulos relacionados a {subject}. '
+                    'Descrição automática baseada somente nos títulos.'
+                )
+            else:
+                cluster['summary'] = (
+                    f'{count} {article_label} reunidos por semelhança entre os títulos. '
+                    'Abra os artigos para conferir o conteúdo.'
+                )
+        enriched.update(
+            enrichment_status='fallback',
+            llm_enriched=False,
+            automatic_summaries=True,
+            llm_reassigned_count=0,
+            llm_other_count=0,
+            enrichment_message=message,
+        )
+        return enriched
+
     def enrich(self, articles):
         documents = validate_articles(articles)
         report = self.cluster(articles)
         if report.get('status') != 'available':
             return report
         if self.gateway is None:
-            return {**report, 'enrichment_status': 'unavailable', 'llm_enriched': False,
-                    'enrichment_message': 'Resumos por IA desativados: configure GEMINI_API_KEY no arquivo .env e reinicie a aplicação.'}
+            return self._fallback_enrichment(
+                report,
+                'A revisão por IA não está configurada. Os nomes e resumos foram gerados '
+                'automaticamente a partir dos títulos.',
+            )
         with self._lock:
             if documents in self._enriched_reports:
                 self._enriched_reports.move_to_end(documents)
@@ -390,5 +428,12 @@ class PubMedTopicClusterer:
                 return enriched
             except Exception as error:
                 logger.warning('Falha no enriquecimento dos temas pela LLM: %s', type(error).__name__)
-                return {**report, 'enrichment_status': 'unavailable', 'llm_enriched': False,
-                        'enrichment_message': 'Os temas foram calculados, mas a revisão e os resumos por IA não responderam.'}
+                enriched = self._fallback_enrichment(
+                    report,
+                    'A revisão por IA não ficou disponível. Os nomes e resumos foram gerados '
+                    'automaticamente a partir dos títulos.',
+                )
+                self._enriched_reports[documents] = deepcopy(enriched)
+                if len(self._enriched_reports) > 16:
+                    self._enriched_reports.popitem(last=False)
+                return enriched

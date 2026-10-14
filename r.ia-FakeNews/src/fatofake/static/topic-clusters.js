@@ -23,11 +23,11 @@
     return data;
   }
 
-  function graphView(data, articles, filter) {
+  function graphView(data, articles, filter, options = {}) {
     const shell = element('div', undefined, 'topic-graph-shell');
     const graphPanel = element('div', undefined, 'topic-graph-panel');
     const graphHeader = element('div', undefined, 'topic-graph-heading');
-    graphHeader.append(element('strong', 'Mapa de relações'), element('span', 'Posições fixas para comparação'));
+    graphHeader.append(element('strong', 'Mapa de relações'), element('span', 'Selecione um ponto para filtrar o tema'));
     graphPanel.appendChild(graphHeader);
 
     const svgNS = 'http://www.w3.org/2000/svg';
@@ -135,6 +135,10 @@
     graphPanel.append(svg, element('p', `As linhas aparecem somente quando a similaridade entre títulos atinge pelo menos ${threshold}%. A posição é uma projeção fixa e aproximada; proximidade não significa qualidade nem concordância científica.`, 'hint'));
     const memberPanel = element('aside', undefined, 'topic-cluster-articles');
     shell.append(graphPanel, memberPanel);
+    if (options.showMap === false) {
+      graphPanel.hidden = true;
+      shell.classList.add('is-list-only');
+    }
     return {shell, memberPanel, setMembers};
   }
 
@@ -151,7 +155,11 @@
     panel.setAttribute('aria-label', 'Grupos de temas dos artigos');
     const heading = element('div', undefined, 'topic-clusters-heading');
     const headingCopy = element('div');
-    headingCopy.append(element('span', 'BERTopic incremental', 'section-eyebrow'), element('h3', 'Explore os artigos por tema'));
+    headingCopy.append(
+      element('span', 'VISÃO POR TEMAS', 'section-eyebrow'),
+      element('h3', 'Explore os resultados por assunto'),
+      element('p', 'Filtre os resultados, visualize relações e encontre rapidamente os artigos de cada grupo.', 'topic-clusters-intro')
+    );
     heading.appendChild(headingCopy);
     const status = element('p', `Preparando 0 de ${articles.length} artigos…`, 'topic-cluster-status');
     status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
@@ -189,17 +197,17 @@
         loader.classList.add('is-complete'); progressBar.style.width = '100%';
         return;
       }
-      if (options.enrich && data.llm_available) {
-        status.textContent = 'A IA está revisando artigos sem grupo e resumindo os temas…';
+      if (options.enrich) {
+        status.textContent = data.llm_available
+          ? 'A IA está revisando artigos sem grupo e resumindo os temas…'
+          : 'Gerando nomes e resumos automáticos para os temas…';
         progressBar.style.width = '94%';
         data = await request(controller, {mode: 'enrich', articles: payloadArticles});
         if (controller.signal.aborted || !panel.isConnected) return;
-      } else if (options.enrich) {
-        data.enrichment_status = 'unavailable';
-        data.enrichment_message = 'Resumos por IA desativados: configure GEMINI_API_KEY no arquivo .env e reinicie a aplicação.';
       }
       progressBar.style.width = '100%'; loader.classList.add('is-complete');
-      status.textContent = `${data.topic_count} tema(s) · ${data.document_count} artigos · ${data.duration_ms} ms`;
+      status.textContent = 'Organização concluída';
+      loader.hidden = true;
       if (data.fallback_used) {
         const notice = element('p', 'O HDBSCAN considerou a maior parte dos títulos como ruído. O mapa aplicou um particionamento adaptativo sobre os mesmos embeddings para evitar um resultado vazio.', 'topic-cluster-notice');
         panel.appendChild(notice);
@@ -207,7 +215,20 @@
 
       const cards = () => Array.from((options.cardsRoot || results).querySelectorAll('.topic-card'));
       const articleByPmid = new Map(articles.map(article => [article.pmid, article]));
+      const overview = element('div', undefined, 'topic-cluster-overview');
+      const overviewItems = [
+        [String(data.document_count), 'artigos organizados'],
+        [String(data.topic_count), data.topic_count === 1 ? 'tema identificado' : 'temas identificados'],
+        [data.llm_enriched ? 'Com IA' : 'Automático', 'modo de organização'],
+      ];
+      overviewItems.forEach(([value, label]) => {
+        const item = element('div', undefined, 'topic-cluster-stat');
+        item.append(element('strong', value), element('span', label));
+        overview.appendChild(item);
+      });
       const controls = element('div', undefined, 'topic-cluster-controls');
+      const controlHeading = element('div', undefined, 'topic-cluster-controls-heading');
+      controlHeading.append(element('strong', 'Filtrar por tema'), element('span', 'A seleção também filtra a lista de resultados abaixo.'));
       const selection = element('p', `Exibindo todos os ${articles.length} artigos.`, 'topic-cluster-selection');
       selection.setAttribute('role', 'status');
       const buttons = [];
@@ -226,7 +247,8 @@
           if (!article) return;
           const button = element('button', undefined, 'topic-cluster-member');
           button.type = 'button';
-          button.append(element('span', article.title_pt || article.title), element('small', `PMID ${pmid}`));
+          const metadata = [article.journal, article.publication_date, `PMID ${pmid}`].filter(Boolean).join(' · ');
+          button.append(element('span', article.title_pt || article.title), element('small', metadata));
           button.addEventListener('click', () => {
             const card = cards().find(item => item.dataset.pmid === pmid);
             card?.scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center'});
@@ -246,27 +268,29 @@
         renderMembers(cluster);
       };
 
-      const all = element('button', `Todos · ${articles.length}`, 'secondary topic-cluster-button');
+      const all = element('button', undefined, 'secondary topic-cluster-button topic-cluster-button-all');
       all.type = 'button'; all.setAttribute('aria-pressed', 'true');
+      all.append(element('strong', 'Todos os artigos'), element('span', `${articles.length} resultados`));
       all.addEventListener('click', () => filter(null));
       buttons.push({button: all, topicId: null}); controls.appendChild(all);
       data.clusters.forEach(cluster => {
         const button = element('button', undefined, 'secondary topic-cluster-button');
         button.type = 'button'; button.setAttribute('aria-pressed', 'false');
         button.style.setProperty('--cluster-color', color(cluster.topic_id));
-        button.append(element('strong', cluster.is_outlier ? 'Sem grupo definido' : `Tema ${cluster.topic_id + 1} · ${cluster.count}`));
-        button.append(element('span', cluster.is_outlier ? `${cluster.count} artigo(s)` : cluster.label));
-        if (cluster.summary) button.append(element('small', cluster.summary, 'topic-cluster-summary'));
+        button.append(element('strong', cluster.is_outlier ? 'Outros assuntos' : cluster.label));
+        button.append(element('span', `${cluster.is_outlier ? 'Sem grupo definido' : `Tema ${cluster.topic_id + 1}`} · ${cluster.count} artigo(s)`));
         button.title = (cluster.terms || []).join(', ');
         button.addEventListener('click', () => filter(cluster));
         buttons.push({button, topicId: cluster.topic_id}); controls.appendChild(button);
       });
-      panel.append(controls, selection);
-      graph = graphView(data, articles, filter);
+      panel.append(overview, controlHeading, controls, selection);
+      graph = graphView(data, articles, filter, options);
       panel.appendChild(graph.shell);
       renderMembers(null);
 
-      if (data.enrichment_status === 'unavailable') {
+      if (data.enrichment_status === 'fallback') {
+        panel.appendChild(element('p', data.enrichment_message || 'Os grupos usam resumos automáticos baseados nos títulos.', 'topic-cluster-fallback-note'));
+      } else if (data.enrichment_status === 'unavailable') {
         panel.appendChild(element('p', data.enrichment_message || 'Os temas foram calculados sem a revisão da IA.', 'topic-cluster-notice'));
       } else if (data.llm_enriched) {
         const reviewed = data.llm_reassigned_count || 0;
@@ -282,8 +306,11 @@
           card.prepend(badge);
         });
       });
-      const limitation = element('p', data.limitation, 'hint');
-      panel.appendChild(limitation);
+      const methodology = element('details', undefined, 'topic-cluster-methodology');
+      methodology.appendChild(element('summary', 'Como esta organização foi criada'));
+      const methodCopy = element('p', `${data.clustering || 'Agrupamento temático'} · processado em ${data.duration_ms} ms. ${data.limitation || ''}`);
+      methodology.appendChild(methodCopy);
+      panel.appendChild(methodology);
     } catch (error) {
       if (error.name !== 'AbortError' && panel.isConnected) {
         status.textContent = error.message || 'Não foi possível agrupar os temas. Os artigos continuam disponíveis.';

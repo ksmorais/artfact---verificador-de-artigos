@@ -29,7 +29,11 @@ function setInputMode(mode, focus = false) {
     document.getElementById('article-file').value = '';
     updateUpload();
   }
-  if (mode === 'upload') document.getElementById('article-reference').value = '';
+  if (mode === 'upload') {
+    document.getElementById('article-reference').value = '';
+    const selectedArticle = document.getElementById('selected-article-feedback');
+    if (selectedArticle) selectedArticle.hidden = true;
+  }
   if (focus) {
     document.getElementById(mode === 'search' ? 'topic-input' : mode === 'link' ? 'article-reference' : 'article-file').focus({preventScroll: true});
   }

@@ -48,6 +48,11 @@ LANGUAGE_LABELS = {
     "ita": "Italiano",
 }
 
+LANGUAGE_CODES = {
+    "PORTUGUESE": {"por"}, "ENGLISH": {"eng"}, "SPANISH": {"spa"},
+    "FRENCH": {"fre", "fra"}, "GERMAN": {"ger", "deu"}, "ITALIAN": {"ita"},
+}
+
 PUBLICATION_TYPE_LABELS = {
     "Journal Article": "Artigo científico",
     "Review": "Revisão",
@@ -133,9 +138,9 @@ class PubMedTopicSearch:
 
     def _translate_titles(self, publications: tuple[Any, ...]) -> dict[str, str]:
         translated = {
-            item.pmid: (item.vernacular_title or item.title)
+            item.pmid: item.vernacular_title
             for item in publications
-            if "por" in item.languages
+            if "por" in item.languages and item.vernacular_title
         }
         pending = [item for item in publications if item.pmid not in translated]
         if self.gateway is None or not pending:
@@ -251,6 +256,14 @@ class PubMedTopicSearch:
 
         matches = {identifier: (query,) for identifier in identifiers}
         publications = self.client.fetch_summaries(identifiers, matches) if identifiers else ()
+        # The indexed English title is not evidence of the publication's language.
+        # Check the language metadata, retaining multilingual Portuguese editions.
+        excluded = 0
+        if language != "ALL":
+            verified = tuple(item for item in publications
+                             if LANGUAGE_CODES[language].intersection(item.languages))
+            excluded = len(publications) - len(verified)
+            publications = verified
         translated_titles = self._translate_titles(publications)
         navigable_total = min(total, 10_000)
         total_pages = math.ceil(navigable_total / page_size) if total else 0
@@ -265,6 +278,10 @@ class PubMedTopicSearch:
                 "pmcid": item.pmcid,
                 "title": item.title,
                 "title_pt": translated_titles.get(item.pmid),
+                "title_pt_source": (
+                    "PUBMED" if "por" in item.languages and item.vernacular_title
+                    else "AI_TRANSLATION" if item.pmid in translated_titles else None
+                ),
                 "authors": list(item.authors),
                 "journal": item.journal,
                 "publication_date": item.publication_date,
@@ -287,6 +304,13 @@ class PubMedTopicSearch:
             "source": "PubMed",
             "query_results": [{"query": query, "status": "OK", "total_matches": total}],
             "articles": articles,
+            "excluded_by_language": excluded,
+            "language_note": (
+                "O filtro usa o idioma de publicação informado pelo PubMed. "
+                "O título e o resumo indexados podem estar em inglês; "
+                "a versão em português pode estar no site da revista."
+                if language != "ALL" else ""
+            ),
             "pagination": {
                 "page": page,
                 "page_size": page_size,
@@ -295,7 +319,7 @@ class PubMedTopicSearch:
                 "total_pages": total_pages,
                 "limited_by_pubmed": total > navigable_total,
                 "has_previous": page > 1,
-                "has_next": page < total_pages and start + len(articles) < 10_000,
+                "has_next": page < total_pages,
                 "first_result": start + 1 if articles else 0,
                 "last_result": start + len(articles),
             },

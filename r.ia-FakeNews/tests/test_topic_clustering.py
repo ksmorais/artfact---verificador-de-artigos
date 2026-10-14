@@ -140,9 +140,19 @@ class TopicClusteringTests(unittest.TestCase):
         broken = self.clusterer()
         broken.gateway = Gateway({'unexpected': True})
         fallback = broken.enrich(articles())
-        self.assertEqual(fallback['enrichment_status'], 'unavailable')
+        self.assertEqual(fallback['enrichment_status'], 'fallback')
         self.assertFalse(fallback['llm_enriched'])
+        self.assertTrue(fallback['automatic_summaries'])
+        self.assertTrue(all(cluster['summary'] for cluster in fallback['clusters']))
         self.assertEqual(fallback['outlier_count'], 1)
+
+    def test_missing_gateway_uses_title_based_summaries(self):
+        clusterer = self.clusterer()
+        report = clusterer.enrich(articles())
+        self.assertEqual(report['enrichment_status'], 'fallback')
+        self.assertTrue(report['automatic_summaries'])
+        self.assertTrue(all(cluster['summary'] for cluster in report['clusters']))
+        self.assertIn('títulos', report['enrichment_message'])
 
     def test_small_corpus_does_not_load_models(self):
         clusterer = self.clusterer()
