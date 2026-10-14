@@ -4,7 +4,7 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import 'tailwindcss';
 
-@theme {
+:root {
   --font-sans: 'Instrument Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
@@ -562,4 +562,172 @@ a, button, [tabindex], input, label[for], select, textarea {
     opacity: 0;
     transition: opacity 200ms ease;
   }
+  .artfact-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 44px;
+  padding: .75rem 1rem;
+  border-radius: .7rem;
+  border: 1px solid var(--color-border);
+  font-size: .875rem;
+  font-weight: 600;
+  transition: all .18s ease;
+  cursor: pointer;
+}
+
+.artfact-btn:hover {
+  transform: translateY(-1px);
+}
+
+.artfact-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.artfact-btn-primary {
+  border-color: var(--color-teal);
+  color: var(--color-teal);
+  background: rgba(0, 212, 170, 0.08);
+}
+
+.artfact-btn-primary:hover {
+  border-color: #00d4aa;
+  background: #00d4aa;
+  color: #080c18;
+  box-shadow: 0 10px 24px rgba(0, 212, 170, 0.18);
+}
+
+.artfact-btn-secondary {
+  border-color: var(--color-border);
+  color: var(--color-foreground);
+  background: rgba(255,255,255,0.02);
+}
+
+.artfact-btn-secondary:hover {
+  border-color: #00d4aa;
+  color: #00d4aa;
+  background: rgba(0, 212, 170, 0.08);
+}
+
+.artfact-segmented {
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  gap: 4px;
+}
+
+.artfact-segmented-btn {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  padding: .6rem .9rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 600;
+  transition: all .18s ease;
+  cursor: pointer;
+}
+
+.artfact-segmented-btn.active,
+.artfact-segmented-btn:hover {
+  background: rgba(0, 212, 170, 0.12);
+  color: var(--color-teal);
+}
+
+.artfact-chip {
+  border: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.02);
+  color: var(--color-muted);
+  border-radius: 999px;
+  padding: .55rem .9rem;
+  font-size: .75rem;
+  font-weight: 600;
+  transition: all .18s ease;
+  cursor: pointer;
+}
+
+.artfact-chip.active,
+.artfact-chip:hover {
+  border-color: #00d4aa;
+  color: #00d4aa;
+  background: rgba(0, 212, 170, 0.08);
+}
+
+.artfact-panel-soft {
+  border: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.02);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+.artfact-input-shell {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: .9rem;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+}
+
+.artfact-input-prefix {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 1rem;
+  border-right: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  background: rgba(255,255,255,0.02);
+  font-family: monospace;
+}
+
+.artfact-main-input {
+  width: 100%;
+  min-height: 64px;
+  padding: 0 1rem;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--color-foreground);
+  font-size: 1rem;
+}
+
+.artfact-main-input::placeholder {
+  color: var(--color-muted);
+}
+
+.artfact-main-input-block {
+  min-height: 52px;
+  border: 1px solid var(--color-border);
+  border-radius: .8rem;
+  background: rgba(255,255,255,0.03);
+}
+
+.artfact-main-input:focus,
+.artfact-main-input-block:focus {
+  box-shadow: 0 0 0 1px #00d4aa inset, 0 0 0 3px rgba(0, 212, 170, 0.12);
+}
+
+.history-card {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  transition: background .18s ease, transform .18s ease;
+}
+
+.history-card:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+@media (max-width: 640px) {
+  .artfact-segmented {
+    width: 100%;
+  }
+
+  .artfact-segmented-btn {
+    flex: 1;
+  }
+}
 }
