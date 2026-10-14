@@ -62,8 +62,8 @@ export async function filePayload(file: File) {
 export async function startAnalysis(reference: string, file: File | null, signal: AbortSignal) {
   return request('/article-analyses', signal, file ? await filePayload(file) : { article_reference: normalizeReference(reference) })
 }
-export function selectClaims(id: string, claims: ExtractedClaim[], signal: AbortSignal) {
-  return request(`/article-analyses/${encodeURIComponent(id)}/claims`, signal, { claims, depth: 'QUICK' })
+export function selectClaims(id: string, claims: ExtractedClaim[], signal: AbortSignal, depth: 'QUICK' | 'DEEP' = 'QUICK') {
+  return request(`/article-analyses/${encodeURIComponent(id)}/claims`, signal, { claims, depth })
 }
 export async function pollAnalysis(id: string, signal: AbortSignal, update: (job: Job) => void): Promise<Job> {
   const deadline = Date.now() + 30 * 60 * 1000
