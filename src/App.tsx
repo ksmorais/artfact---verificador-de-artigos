@@ -1303,7 +1303,7 @@ export default function App() {
   ].filter(Boolean).join(' ')
 
   return (
-    <div className={`min-h-screen bg-[--color-background] grid-bg scan-line ${accessibilityClasses}`}>
+    <div className={`artfact-app min-h-screen bg-[--color-background] grid-bg scan-line ${accessibilityClasses}`}>
       <a href="#main-content" className="skip-link">Pular para o conteúdo principal</a>
       {/* Nav */}
       <header className="border-b border-[--color-border] bg-[--color-background] bg-opacity-90 backdrop-blur-sm sticky top-0 z-50">

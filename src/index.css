@@ -731,3 +731,49 @@ a, button, [tabindex], input, label[for], select, textarea {
   }
 }
 }
+
+
+/* Botões com contorno: texto/borda brancos e hover verde com texto branco.
+   A regra é limitada ao ArtFact para não interferir nos campos de formulário,
+   no botão Google ou nos controles específicos de acessibilidade. */
+.artfact-app:not(.a11y-high-contrast)
+  :is(button, a)[class*="border"]:not(.a11y-trigger):not(.a11y-reset):not([class*="color-red"]) {
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+  background-color: transparent !important;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+/* Os rótulos internos também ficam brancos, mesmo que tenham uma classe própria. */
+.artfact-app:not(.a11y-high-contrast)
+  :is(button, a)[class*="border"]:not(.a11y-trigger):not(.a11y-reset):not([class*="color-red"])
+  :is(span, strong) {
+  color: #ffffff !important;
+}
+
+/* Estados ativos continuam identificáveis mesmo com a paleta unificada. */
+.artfact-app:not(.a11y-high-contrast)
+  button[class*="border"]:is([aria-pressed="true"], [aria-selected="true"]):not(.a11y-trigger):not(.a11y-reset):not([class*="color-red"]) {
+  background-color: rgba(0, 124, 98, 0.28) !important;
+}
+
+/* Verde escuro proporciona contraste legível com letras brancas no hover. */
+@media (hover: hover) {
+  .artfact-app:not(.a11y-high-contrast)
+    :is(button:not(:disabled), a)[class*="border"]:not(.a11y-trigger):not(.a11y-reset):not([class*="color-red"]):hover {
+    background-color: #007c62 !important;
+    border-color: #ffffff !important;
+    color: #ffffff !important;
+    box-shadow: 0 8px 22px rgba(0, 124, 98, 0.24);
+  }
+}
+
+/* Nunca deixar o botão desabilitado preto sobre o fundo escuro. */
+.artfact-app:not(.a11y-high-contrast)
+  button[class*="border"]:disabled:not(.a11y-trigger):not(.a11y-reset):not([class*="color-red"]) {
+  border-color: #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.035) !important;
+  color: #ffffff !important;
+  opacity: 0.8;
+  cursor: not-allowed;
+}
