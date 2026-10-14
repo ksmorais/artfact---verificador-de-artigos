@@ -191,8 +191,46 @@ function ScientificSummary({ data }: { data: OverallIndicators }) {
   </section>
 }
 
-function AnalysisCard({ result }: { result: AnalysisResult }) {
-  const [activeClaimIndex, setActiveClaimIndex] = useState(0)
+// Os cards de alegações aparecem logo após a busca e controlam a aba da análise.
+function ClaimOverviewCards({ result, activeIndex, onChoose }: {
+  result: AnalysisResult
+  activeIndex: number
+  onChoose: (index: number) => void
+}) {
+  return (
+    <section aria-labelledby="selected-claims-heading" className="mt-6 space-y-4 rounded-xl border border-[--color-border] bg-[--color-surface] p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="selected-claims-heading" className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-[--color-foreground]">Alegações do artigo</h2>
+          <p className="mt-2 text-xs text-[--color-muted]">Escolha uma alegação para abrir sua análise e consultar as evidências.</p>
+        </div>
+        <span className="rounded-full border border-[--color-border] px-3 py-1 font-mono text-[10px] text-[--color-muted]">{result.claims.length} alegação(ões)</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {result.claims.map((claim, index) => {
+          const active = activeIndex === index
+          return <button key={`${result.analysisId}-${index}`} type="button" aria-pressed={active}
+            onClick={() => onChoose(index)}
+            className={`min-h-32 space-y-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[--color-teal] ${active
+              ? 'border-[--color-teal] bg-[--color-teal-faint]'
+              : 'border-[--color-border] bg-[--color-background] hover:border-[--color-teal] hover:bg-[--color-teal-faint]'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-[--color-teal]">Alegação {index + 1}</span>
+              <VerdictBadge verdict={claim.verdict} />
+            </div>
+            <p className="line-clamp-3 text-sm leading-relaxed text-[--color-foreground]">{claim.text}</p>
+          </button>
+        })}
+      </div>
+    </section>
+  )
+}
+
+function AnalysisCard({ result, activeClaimIndex, onSelectClaim }: {
+  result: AnalysisResult
+  activeClaimIndex: number
+  onSelectClaim: (index: number) => void
+}) {
   const [sourceQuery, setSourceQuery] = useState('')
   const [sourceSort, setSourceSort] = useState<'original' | 'title'>('original')
   const tabId = useId()
@@ -209,7 +247,7 @@ function AnalysisCard({ result }: { result: AnalysisResult }) {
       default: return
     }
     event.preventDefault()
-    setActiveClaimIndex(next)
+    onSelectClaim(next)
     claimTabRefs.current[next]?.focus()
   }
   const sourceSearchText = sourceQuery.trim().toLocaleLowerCase('pt-BR')
@@ -260,7 +298,7 @@ function AnalysisCard({ result }: { result: AnalysisResult }) {
       </section>
 
       {/* Abas individuais por alegação; cada painel mantém as evidências da própria afirmação. */}
-      <section aria-labelledby="claims-heading" className="overflow-hidden rounded-xl border border-[--color-border] bg-[--color-surface]">
+      <section id="artfact-claims-panel" aria-labelledby="claims-heading" className="overflow-hidden rounded-xl border border-[--color-border] bg-[--color-surface]">
         <div className="border-b border-[--color-border] px-5 py-4 sm:px-7">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 id="claims-heading" className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-[--color-foreground]">Análise de afirmações</h3>
@@ -279,7 +317,7 @@ function AnalysisCard({ result }: { result: AnalysisResult }) {
                 ref={element => { claimTabRefs.current[i] = element }}
                 aria-selected={active} aria-controls={`${tabId}-panel-${i}`}
                 title={claim.text} tabIndex={active ? 0 : -1}
-                onClick={() => setActiveClaimIndex(i)}
+                onClick={() => onSelectClaim(i)}
                 onKeyDown={event => handleClaimTabKeyDown(event, i)}
                 className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[--color-teal] ${active
                   ? 'border-[--color-teal] bg-[--color-teal-faint] text-[--color-foreground] shadow-[0_0_0_1px_rgba(0,212,170,0.15)]'
@@ -929,6 +967,7 @@ export default function App() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [status, setStatus] = useState<AnalysisStatus>('idle')
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [activeResultClaim, setActiveResultClaim] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
   const controller = useRef<AbortController | null>(null)
   const busy = useRef(false)
@@ -1025,6 +1064,7 @@ export default function App() {
       const data = mapResult(job)
       data.healthArea = detectHealthArea(data.title)
       setResult(data)
+      setActiveResultClaim(0)
       setJobId(id)
       setApiError('')
       setStatus('done')
@@ -1066,6 +1106,7 @@ export default function App() {
       const data = mapResult(job)
       data.healthArea = detectHealthArea(data.title)
       setResult(data)
+      setActiveResultClaim(0)
       const currentUser = auth.currentUser
       if (currentUser) {
         const entry = makeSavedArticle(data)
@@ -1584,6 +1625,68 @@ export default function App() {
 
         {mode === 'topic' && topicError && <p role="alert" className="mx-auto mt-4 max-w-3xl rounded-lg border border-[--color-red] bg-[--color-red-faint] p-4 text-sm text-[--color-foreground]">{topicError}</p>}
 
+        {apiError && <div role="alert" className="mt-5 p-4 rounded-lg border border-red-400 text-sm">{apiError}
+          {jobId && <button onClick={() => void runAnalysis('resume')} disabled={status === 'loading'} className={`${BUTTON_GREEN} ml-3`}>Retomar</button>}
+        </div>}
+        {status === 'loading' && <button onClick={stopPolling} className={`${BUTTON_GREEN} mt-4`}>Interromper consulta</button>}
+        {status === 'selecting' && <section className="mt-6 space-y-4 rounded-xl border border-[--color-border] bg-[--color-surface] p-5 sm:p-6">
+          <h2 className="text-base font-semibold text-[--color-foreground]">Selecione as alegações para pesquisar</h2>
+          <p className="text-sm text-[--color-muted]">Revise o texto extraído e escolha até 10 alegações para comparar com a literatura. A pesquisa usará o modo {depthRef.current === 'DEEP' ? 'avançado (DEEP)' : 'rápido (QUICK)' }.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {choices.map((c, index) => <label key={c.claim_id} className={`flex items-start gap-3 rounded-xl border p-4 text-sm transition-colors ${selected.includes(c.claim_id)
+            ? 'border-[--color-teal] bg-[--color-teal-faint]'
+            : 'border-[--color-border] bg-[--color-background] hover:border-[--color-teal]'}`}>
+            <span className="sr-only">Selecionar alegação {index + 1}</span>
+            <input type="checkbox" checked={selected.includes(c.claim_id)}
+              disabled={!selected.includes(c.claim_id) && selected.length >= 10}
+              onChange={e => setSelected(prev => e.target.checked ? [...prev, c.claim_id] : prev.filter(id => id !== c.claim_id))} />
+            <span className="flex-1 space-y-2">
+              {c.source === 'USER' && <span className="block text-[10px] uppercase tracking-wider text-[--color-teal]">Alegação criada por você</span>}
+              <textarea rows={2} aria-label={'Editar alegação ' + c.claim_id} value={c.text} maxLength={2000}
+                onChange={event => setChoices(items => items.map(item => item.claim_id === c.claim_id ? { ...item, text: event.target.value } : item))}
+                className="w-full rounded-md border border-[--color-border] bg-[--color-background] p-2 text-sm text-[--color-foreground]" />
+              {c.quote && <span className="block text-[11px] text-[--color-muted]">Trecho original: “{c.quote.slice(0, 220)}{c.quote.length > 220 ? '…' : ''}”{c.section ? ' · ' + c.section : ''}{c.page ? ' · Página ' + c.page : ''}</span>}
+            </span>
+          </label>)}
+          </div>
+          <ScientificReader analysisId={jobId} onAdd={addUserClaim} remaining={10 - selected.length} />
+          <button disabled={!selected.length || choices.filter(c => selected.includes(c.claim_id)).some(c => c.text.trim().length < 8)} onClick={() => void runAnalysis('select')} className={`${BUTTON_FILLED} w-full sm:w-auto`}>Pesquisar {selected.length} alegação(ões)</button>
+        </section>}
+        {/* Loading skeleton */}
+        {status === 'loading' && (
+          <div className="mt-10 space-y-4 animate-slide-up" role="status" aria-live="polite">
+            <div className="border border-[--color-border] rounded-lg p-5 bg-[--color-surface] space-y-3">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-2 h-2 rounded-full bg-[--color-teal] animate-pulse" />
+                <span className="font-mono text-[11px] text-[--color-teal] tracking-widest">PROCESSANDO ARTIGO · {Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0}%</span>
+              </div>
+              <div role="progressbar" aria-label="Progresso da análise" aria-valuemin={0} aria-valuemax={100}
+                aria-valuenow={Math.max(0, Math.min(100, Number.isFinite(progress) ? progress : 0))}
+                className="h-2 overflow-hidden rounded-full bg-[--color-border]">
+                <div className="h-full rounded-full bg-[--color-teal] transition-all duration-500"
+                  style={{ width: `${Math.max(0, Math.min(100, Number.isFinite(progress) ? progress : 0))}%` }} />
+              </div>
+              {[94, 82, 68, 87].map((width, i) => (
+                <div key={i} className="shimmer h-4 rounded" style={{ width: `${width}%` }} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Cards das alegações entre a busca e os artigos encontrados. */}
+        {status === 'done' && result && <>
+          <ClaimOverviewCards result={result} activeIndex={activeResultClaim}
+            onChoose={index => {
+              setActiveResultClaim(index)
+              window.requestAnimationFrame(() => document.getElementById('artfact-claims-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+            }} />
+          <div id="artfact-analysis-result">
+            <AnalysisCard key={result.analysisId} result={result}
+              activeClaimIndex={activeResultClaim} onSelectClaim={setActiveResultClaim} />
+          </div>
+        </>}
+
+        {/* Artigos encontrados ficam depois das alegações e da análise de afirmações. */}
         {mode === 'topic' && topicResult && <section id="topic-results" aria-labelledby="topic-results-heading"
           className="mx-auto mt-6 max-w-3xl space-y-4 rounded-2xl border border-[--color-border] bg-[--color-surface] p-4 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[--color-border] pb-4">
@@ -1629,52 +1732,6 @@ export default function App() {
           </div>}
           {topicResult.pagination.limited_by_pubmed && <p className="text-[11px] text-[--color-muted]">O PubMed limita a navegação aos primeiros 10.000 resultados. Refine os filtros para encontrar artigos específicos.</p>}
         </section>}
-
-        {apiError && <div role="alert" className="mt-5 p-4 rounded-lg border border-red-400 text-sm">{apiError}
-          {jobId && <button onClick={() => void runAnalysis('resume')} disabled={status === 'loading'} className={`${BUTTON_GREEN} ml-3`}>Retomar</button>}
-        </div>}
-        {status === 'loading' && <button onClick={stopPolling} className={`${BUTTON_GREEN} mt-4`}>Interromper consulta</button>}
-        {status === 'selecting' && <section className="mt-6 p-5 rounded-lg border border-[--color-border] space-y-4">
-          <h2 className="font-semibold">Selecione as alegações para pesquisar</h2>
-          <p className="text-sm text-[--color-muted]">Revise o texto extraído e escolha até 10 alegações para comparar com a literatura. A pesquisa usará o modo {depthRef.current === 'DEEP' ? 'avançado (DEEP)' : 'rápido (QUICK)' }.</p>
-          {choices.map(c => <label key={c.claim_id} className="flex gap-3 items-start text-sm">
-            <input type="checkbox" checked={selected.includes(c.claim_id)}
-              disabled={!selected.includes(c.claim_id) && selected.length >= 10}
-              onChange={e => setSelected(prev => e.target.checked ? [...prev, c.claim_id] : prev.filter(id => id !== c.claim_id))} />
-            <span className="flex-1 space-y-2">
-              {c.source === 'USER' && <span className="block text-[10px] uppercase tracking-wider text-[--color-teal]">Alegação criada por você</span>}
-              <textarea rows={2} aria-label={'Editar alegação ' + c.claim_id} value={c.text} maxLength={2000}
-                onChange={event => setChoices(items => items.map(item => item.claim_id === c.claim_id ? { ...item, text: event.target.value } : item))}
-                className="w-full rounded-md border border-[--color-border] bg-[--color-background] p-2 text-sm text-[--color-foreground]" />
-              {c.quote && <span className="block text-[11px] text-[--color-muted]">Trecho original: “{c.quote.slice(0, 220)}{c.quote.length > 220 ? '…' : ''}”{c.section ? ' · ' + c.section : ''}{c.page ? ' · Página ' + c.page : ''}</span>}
-            </span>
-          </label>)}
-          <ScientificReader analysisId={jobId} onAdd={addUserClaim} remaining={10 - selected.length} />
-          <button disabled={!selected.length || choices.filter(c => selected.includes(c.claim_id)).some(c => c.text.trim().length < 8)} onClick={() => void runAnalysis('select')} className={`${BUTTON_FILLED} w-full sm:w-auto`}>Pesquisar {selected.length} alegação(ões)</button>
-        </section>}
-        {/* Loading skeleton */}
-        {status === 'loading' && (
-          <div className="mt-10 space-y-4 animate-slide-up" role="status" aria-live="polite">
-            <div className="border border-[--color-border] rounded-lg p-5 bg-[--color-surface] space-y-3">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-2 h-2 rounded-full bg-[--color-teal] animate-pulse" />
-                <span className="font-mono text-[11px] text-[--color-teal] tracking-widest">PROCESSANDO ARTIGO · {Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0}%</span>
-              </div>
-              <div role="progressbar" aria-label="Progresso da análise" aria-valuemin={0} aria-valuemax={100}
-                aria-valuenow={Math.max(0, Math.min(100, Number.isFinite(progress) ? progress : 0))}
-                className="h-2 overflow-hidden rounded-full bg-[--color-border]">
-                <div className="h-full rounded-full bg-[--color-teal] transition-all duration-500"
-                  style={{ width: `${Math.max(0, Math.min(100, Number.isFinite(progress) ? progress : 0))}%` }} />
-              </div>
-              {[94, 82, 68, 87].map((width, i) => (
-                <div key={i} className="shimmer h-4 rounded" style={{ width: `${width}%` }} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Result */}
-        {status === 'done' && result && <div id="artfact-analysis-result"><AnalysisCard key={result.analysisId} result={result} /></div>}
 
         {/* Login banner */}
         {showBanner && !isLoggedIn && status === 'done' && (
