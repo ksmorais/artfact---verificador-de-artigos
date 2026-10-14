@@ -6,6 +6,7 @@ import pubmedGovLogo from './assets/pubmed-gov-logo.png'
 import type { Indicators, OverallIndicators } from './scientificIndicators.ts'
 import { makeSavedArticle, type SavedArticle } from './historyRecord.ts'
 import { loadHistory, saveHistory, deleteHistoryEntry } from './history.ts'
+import { TopicExplorer, ScientificReader } from './BackendFeatures'
 
 type VerifyMode = 'url' | 'image' | 'topic'
 type AnalysisStatus = 'idle' | 'loading' | 'selecting' | 'done'
@@ -13,7 +14,7 @@ type SearchMode = 'quick' | 'advanced'
 type AdvancedSearchType = 'pubmed' | 'doi' | 'url'
 type ResearchDepth = 'QUICK' | 'DEEP'
 type TopicArticleType = 'ALL' | 'REVIEWS' | 'TRIALS'
-type TopicLanguage = 'ALL' | 'PORTUGUESE' | 'ENGLISH'
+type TopicLanguage = 'ALL' | 'PORTUGUESE' | 'ENGLISH' | 'SPANISH' | 'FRENCH' | 'GERMAN' | 'ITALIAN'
 type TopicIndexing = 'ALL' | 'MEDLINE'
 type TopicAvailability = 'ALL' | 'PMC_FULL_TEXT'
 
@@ -26,6 +27,8 @@ interface TopicArticle {
   authors?: string[]
   doi?: string | null
   publication_type_labels?: string[]
+  language_labels?: string[]
+  title_pt_source?: 'PUBMED' | 'AI_TRANSLATION' | null
   has_full_text?: boolean
 }
 interface TopicSearchResponse {
@@ -33,6 +36,8 @@ interface TopicSearchResponse {
   source: string
   topic: string
   query_results: { query: string; total_matches: number }[]
+  excluded_by_language?: number
+  language_note?: string
   pagination: {
     page: number
     total_results: number
@@ -294,6 +299,11 @@ function AnalysisCard({ result }: { result: AnalysisResult }) {
                 <VerdictBadge verdict={claim.verdict} />
                 <h4 className="min-w-0 flex-1 text-sm font-medium leading-snug text-[--color-foreground] sm:text-base">{claim.text}</h4>
               </div>
+              {claim.sourceQuote && <details className="rounded-lg border border-[--color-border] bg-[--color-background] p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-[--color-teal]">Trecho de origem da alegação</summary>
+                <blockquote className="mt-2 border-l-2 border-[--color-teal] pl-3 text-xs leading-relaxed text-[--color-foreground]">{claim.sourceQuote}</blockquote>
+                {(claim.sourceSection || claim.sourcePage) && <p className="mt-2 text-[11px] text-[--color-muted]">{[claim.sourceSection, claim.sourcePage ? 'Página ' + claim.sourcePage : ''].filter(Boolean).join(' · ')}</p>}
+              </details>}
               <ClaimCoverageBar coverage={claim.indicators.coverage} verdict={claim.verdict} />
               <p className="text-xs leading-relaxed text-[--color-muted] sm:text-sm">{claim.note}</p>
               {(claim.findings.length > 0 || claim.indicators.evidence || claim.indicators.methodology || claim.indicators.methodologyNote) &&
@@ -907,6 +917,8 @@ export default function App() {
   const [topicIndexing, setTopicIndexing] = useState<TopicIndexing>('MEDLINE')
   const [topicAvailability, setTopicAvailability] = useState<TopicAvailability>('ALL')
   const [topicResult, setTopicResult] = useState<TopicSearchResponse | null>(null)
+  const [topicGrouping, setTopicGrouping] = useState(false)
+  const [topicFilteredPmids, setTopicFilteredPmids] = useState<string[] | null>(null)
   const [topicBusy, setTopicBusy] = useState(false)
   const [topicError, setTopicError] = useState('')
   const topicController = useRef<AbortController | null>(null)
@@ -925,6 +937,10 @@ export default function App() {
   const [progress, setProgress] = useState(0)
   const [choices, setChoices] = useState<ExtractedClaim[]>([])
   const [selected, setSelected] = useState<string[]>([])
+  const addUserClaim = (claim: ExtractedClaim) => {
+    setChoices(current => current.some(item => item.claim_id === claim.claim_id) ? current : [...current, claim])
+    setSelected(current => current.length >= 10 ? current : [...current, claim.claim_id])
+  }
   useEffect(() => () => controller.current?.abort(), [])
 
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -1042,7 +1058,7 @@ export default function App() {
   const receiveJob = (job: Job) => {
     if (job.status === 'AWAITING_CLAIM_SELECTION') {
       const items = extractedClaims(job)
-      if (!items.length) throw new Error('O backend não extraiu alegações deste artigo.')
+      // Mesmo sem alegações automáticas, o usuário pode criar as próprias no leitor.
       setChoices(items)
       setSelected(items.slice(0, 10).map(c => c.claim_id))
       setStatus('selecting')
@@ -1101,6 +1117,7 @@ export default function App() {
     setTopicBusy(false)
     setTopicError('')
     setTopicResult(null)
+    setTopicFilteredPmids(null)
   }
 
   // Usa a rota PubMed existente do Flask. Não envia o tema para o endpoint de DOI/URL.
@@ -1147,6 +1164,7 @@ export default function App() {
       }
       if (active.signal.aborted) return
       setTopicResult(payload as unknown as TopicSearchResponse)
+      setTopicFilteredPmids(null)
     } catch (error) {
       if (!active.signal.aborted) setTopicError(error instanceof TypeError ? 'Não foi possível acessar o servidor de pesquisa. Confira se o Flask está funcionando na porta 5000.' : error instanceof Error ? error.message : 'Não foi possível pesquisar o tema.')
     } finally {
@@ -1460,6 +1478,10 @@ export default function App() {
                       <option value="ALL">Todos os idiomas</option>
                       <option value="PORTUGUESE">Português</option>
                       <option value="ENGLISH">Inglês</option>
+                      <option value="SPANISH">Espanhol</option>
+                      <option value="FRENCH">Francês</option>
+                      <option value="GERMAN">Alemão</option>
+                      <option value="ITALIAN">Italiano</option>
                     </select>
                   </label>
                   <label className="space-y-1.5 text-xs text-[--color-muted]">Indexação
@@ -1477,6 +1499,10 @@ export default function App() {
                     </select>
                   </label>
                 </div>
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[--color-border] bg-[--color-background] p-4 text-xs text-[--color-foreground]">
+                  <input type="checkbox" checked={topicGrouping} onChange={event => { setTopicGrouping(event.target.checked); setTopicFilteredPmids(null) }} />
+                  <span><strong className="block font-semibold">Agrupar artigos por tema</strong><span className="mt-1 block leading-relaxed text-[--color-muted]">Encontra grupos pela similaridade entre os títulos desta página (BERTopic). Você poderá filtrar por grupos e visualizar o mapa de relações.</span></span>
+                </label>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1567,8 +1593,13 @@ export default function App() {
             </div>
             <span className="rounded-full border border-[--color-teal] bg-[--color-teal-faint] px-3 py-1 font-mono text-[10px] text-[--color-teal]">PUBMED</span>
           </div>
-          {topicResult.articles.length === 0 ? <p className="py-6 text-sm text-[--color-muted]">Nenhum artigo encontrado. Tente outro tema ou remova alguns filtros.</p> :
-            <div className="space-y-3">{topicResult.articles.map(article => {
+          {topicResult.language_note && <p className="rounded-lg border border-[--color-border] bg-[--color-background] p-3 text-xs text-[--color-muted]">{topicResult.language_note}{topicResult.excluded_by_language ? ' · ' + topicResult.excluded_by_language + ' registro(s) excluído(s) pelo idioma nesta página.' : ''}</p>}
+          {topicGrouping && topicResult.articles.length >= 4 && <TopicExplorer
+            key={topicResult.topic + ':' + topicResult.pagination.page + ':' + topicResult.articles.map(a => a.pmid).join(',')}
+            articles={topicResult.articles.map(article => ({ pmid: article.pmid, title: article.title }))}
+            onFilter={setTopicFilteredPmids} />}
+          {topicResult.articles.length === 0 ? <p className="py-6 text-sm text-[--color-muted]">Nenhum artigo encontrado nesta página. Tente outro tema ou remova alguns filtros.</p> :
+            <div className="space-y-3">{topicResult.articles.filter(article => !topicFilteredPmids || topicFilteredPmids.includes(article.pmid)).map(article => {
               const validPmid = /^\d{1,12}$/.test(article.pmid)
               return <article key={article.pmid} className="space-y-3 rounded-xl border border-[--color-border] bg-[--color-background] p-4 transition-colors hover:border-[--color-teal]">
                 <div className="flex flex-wrap items-center gap-2 text-[10px] text-[--color-muted]">
@@ -1577,7 +1608,8 @@ export default function App() {
                   {article.has_full_text && <span className="text-[--color-teal]">Texto completo no PMC</span>}
                 </div>
                 <h3 className="text-sm font-semibold leading-relaxed text-[--color-foreground]">{article.title_pt || article.title}</h3>
-                {article.title_pt && article.title_pt !== article.title && <p className="text-xs leading-relaxed text-[--color-muted]">Título original: {article.title}</p>}
+                {article.title_pt && article.title_pt !== article.title && <p className="text-xs leading-relaxed text-[--color-muted]">Título original: {article.title}{article.title_pt_source === 'AI_TRANSLATION' ? ' · Tradução automática' : ''}</p>}
+                {(article.language_labels?.length ?? 0) > 0 && <p className="text-[11px] text-[--color-muted]">Idioma de publicação: {article.language_labels?.join(', ')}</p>}
                 <p className="text-xs text-[--color-muted]">{[article.authors?.slice(0, 3).join(', '), article.journal].filter(Boolean).join(' · ')}</p>
                 {(article.publication_type_labels?.length ?? 0) > 0 && <p className="text-[11px] text-[--color-muted]">{article.publication_type_labels?.slice(0, 3).join(' · ')}</p>}
                 <div className="flex flex-wrap gap-2">
@@ -1609,9 +1641,16 @@ export default function App() {
             <input type="checkbox" checked={selected.includes(c.claim_id)}
               disabled={!selected.includes(c.claim_id) && selected.length >= 10}
               onChange={e => setSelected(prev => e.target.checked ? [...prev, c.claim_id] : prev.filter(id => id !== c.claim_id))} />
-            <span>{c.text}</span>
+            <span className="flex-1 space-y-2">
+              {c.source === 'USER' && <span className="block text-[10px] uppercase tracking-wider text-[--color-teal]">Alegação criada por você</span>}
+              <textarea rows={2} aria-label={'Editar alegação ' + c.claim_id} value={c.text} maxLength={2000}
+                onChange={event => setChoices(items => items.map(item => item.claim_id === c.claim_id ? { ...item, text: event.target.value } : item))}
+                className="w-full rounded-md border border-[--color-border] bg-[--color-background] p-2 text-sm text-[--color-foreground]" />
+              {c.quote && <span className="block text-[11px] text-[--color-muted]">Trecho original: “{c.quote.slice(0, 220)}{c.quote.length > 220 ? '…' : ''}”{c.section ? ' · ' + c.section : ''}{c.page ? ' · Página ' + c.page : ''}</span>}
+            </span>
           </label>)}
-          <button disabled={!selected.length} onClick={() => void runAnalysis('select')} className={`${BUTTON_FILLED} w-full sm:w-auto`}>Pesquisar {selected.length} alegação(ões)</button>
+          <ScientificReader analysisId={jobId} onAdd={addUserClaim} remaining={10 - selected.length} />
+          <button disabled={!selected.length || choices.filter(c => selected.includes(c.claim_id)).some(c => c.text.trim().length < 8)} onClick={() => void runAnalysis('select')} className={`${BUTTON_FILLED} w-full sm:w-auto`}>Pesquisar {selected.length} alegação(ões)</button>
         </section>}
         {/* Loading skeleton */}
         {status === 'loading' && (

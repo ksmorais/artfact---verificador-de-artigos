@@ -2,14 +2,14 @@ import { readIndicators, summarizeIndicators, type Indicators, type OverallIndic
 
 export type Verdict = 'verified' | 'fake' | 'uncertain'
 export interface Finding { relation: string; articleTitle: string; text: string; url?: string; doi?: string; pmid?: string }
-export interface Claim { text: string; verdict: Verdict; confidence: null; note: string; indicators: Indicators; findings: Finding[] }
+export interface Claim { text: string; verdict: Verdict; confidence: null; note: string; indicators: Indicators; findings: Finding[]; sourceQuote?: string; sourceSection?: string; sourcePage?: number }
 export interface AnalysisResult {
   title: string; source: string; publishedDate: string; overallVerdict: Verdict
   credibilityScore: null; claims: Claim[]; redFlags: string[]; indicators: OverallIndicators
   supportingLinks: { label: string; url: string }[]; analysisId: string
   articleUrl?: string; healthArea?: string
 }
-export interface ExtractedClaim { claim_id: string; text: string }
+export interface ExtractedClaim { claim_id: string; text: string; source?: 'USER'; quote?: string; section?: string; page?: number }
 export interface Job {
   analysis_id: string; status: string; progress: number; updated_at?: string
   result?: Record<string, unknown>; error?: { message?: string }
@@ -123,7 +123,11 @@ export function mapResult(job: Job): AnalysisResult {
         text: excerpt.slice(0, 460), url, doi, pmid }]
     })
     if (failed) flags.add(`Falha na alegação: ${str(record(entry.claim).text)}`)
-    return { text: str(record(entry.claim).text) || 'Alegação', verdict: failed ? 'uncertain' as const : verdict(summary.status), confidence: null,
+    const entryClaim = record(entry.claim)
+    return { sourceQuote: str(entryClaim.quote) || undefined,
+      sourceSection: str(entryClaim.section) || undefined,
+      sourcePage: typeof entryClaim.page === 'number' && Number.isInteger(entryClaim.page) ? entryClaim.page : undefined,
+      text: str(entryClaim.text) || 'Alegação', verdict: failed ? 'uncertain' as const : verdict(summary.status), confidence: null,
       indicators: readIndicators(failed ? {} : data), findings,
       note: failed ? str(record(entry.error).message) || 'Não foi possível avaliar esta alegação.' : [str(summary.headline), str(summary.summary), str(summary.interpretation)].filter(Boolean).join(' ') || 'Resultado sem resumo. Consulte o relatório completo.' }
   })
