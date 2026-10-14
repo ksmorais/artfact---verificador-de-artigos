@@ -174,6 +174,22 @@
     if (!options.preserveScroll) window.scrollTo({top: 0, behavior: options.instant ? 'auto' : 'smooth'});
   }
 
+  window.presentAppError = function (message) {
+    if (activeScreen === 'processing') {
+      showScreen('processing', {preserveScroll: true, preserveHash: true, instant: true, force: true});
+      document.getElementById('error')?.scrollIntoView({behavior: 'smooth', block: 'center'});
+      return;
+    }
+    document.querySelector('.ui-toast[data-error="true"]')?.remove();
+    const toast = document.createElement('div');
+    toast.className = 'ui-toast ui-toast-error';
+    toast.dataset.error = 'true';
+    toast.setAttribute('role', 'alert');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 7000);
+  };
+
   document.querySelectorAll('[data-screen-nav]').forEach(item => {
     item.addEventListener('click', event => {
       const target = item.dataset.screenNav;

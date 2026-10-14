@@ -208,6 +208,16 @@ class GeminiEvidenceTests(unittest.TestCase):
             ):
                 analyzer._request_json("https://example.test", {"x": 1})
 
+    def test_reports_rejected_api_key_with_actionable_message(self):
+        headers = Message()
+        error = HTTPError("https://example.test", 401, "Unauthorized", headers, None)
+        with patch("fatofake.gemini_evidence.urlopen", side_effect=error):
+            analyzer = GeminiEvidenceAnalyzer("invalid", max_attempts=1)
+            with self.assertRaisesRegex(
+                GeminiAnalysisError, "Atualize GEMINI_API_KEY no arquivo .env"
+            ):
+                analyzer._request_json("https://example.test", {"x": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

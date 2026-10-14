@@ -242,6 +242,12 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
 class GenericHealthQueryPlanner:
     """Cria consultas genéricas transparentes, sem fingir tradução clínica."""
 
+    _PORTUGUESE_MARKERS = frozenset({
+        "a", "as", "ao", "aos", "com", "como", "da", "das", "de", "do", "dos",
+        "e", "em", "entre", "na", "nas", "no", "nos", "não", "o", "os", "ou",
+        "para", "por", "que", "se", "sem", "uma", "um", "umas", "uns",
+    })
+
     def __init__(self, translator: QueryTranslator | None = None) -> None:
         self.translator = translator
 
@@ -256,14 +262,22 @@ class GenericHealthQueryPlanner:
 
     def generate_queries(self, claim: str) -> list[str]:
         compact = " ".join(claim.split())[:300]
+        tokens = set(re.findall(r"[^\W_]+", compact.casefold(), flags=re.UNICODE))
+        should_translate = bool(
+            self.translator
+            and (
+                any(char in compact.casefold() for char in "ãáàâçéêíóôõú")
+                or tokens & self._PORTUGUESE_MARKERS
+            )
+        )
         try:
             with logged_step(
                 logger,
                 "query_translation",
-                enabled=self.translator is not None,
+                enabled=should_translate,
             ) as step:
                 translated = (
-                    self.translator.translate(compact) if self.translator else ""
+                    self.translator.translate(compact) if should_translate else ""
                 )
                 step["translated"] = bool(translated)
         except Exception:

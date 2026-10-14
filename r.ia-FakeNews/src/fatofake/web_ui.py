@@ -305,29 +305,32 @@ WEB_UI_HTML = r"""<!doctype html>
         <div class="topic-filters">
           <div class="field filter-field">
             <label for="topic-type">Tipo de artigo</label>
-            <select id="topic-type">
+            <select id="topic-type" aria-describedby="topic-type-help">
               <option value="ALL">Todos os tipos</option>
               <option value="REVIEWS">Revisões sistemáticas e meta-análises</option>
               <option value="TRIALS">Ensaios clínicos randomizados</option>
             </select>
+            <p id="topic-type-help" class="filter-help">Filtra pelo desenho do estudo, como revisão ou ensaio clínico.</p>
           </div>
           <div class="field filter-field">
             <label for="topic-availability">Disponibilidade</label>
-            <select id="topic-availability">
+            <select id="topic-availability" aria-describedby="topic-availability-help">
               <option value="ALL">Qualquer disponibilidade</option>
               <option value="PMC_FULL_TEXT">Texto completo gratuito no PMC</option>
             </select>
+            <p id="topic-availability-help" class="filter-help">Escolha se o texto completo precisa estar disponível gratuitamente no PMC.</p>
           </div>
           <div class="field filter-field">
             <label for="topic-indexing">Indexação</label>
-            <select id="topic-indexing">
+            <select id="topic-indexing" aria-describedby="topic-indexing-help">
               <option value="MEDLINE" selected>Somente indexados no MEDLINE</option>
               <option value="ALL">Todos os registros do PubMed</option>
             </select>
+            <p id="topic-indexing-help" class="filter-help">MEDLINE reúne registros biomédicos com indexação mais detalhada; todos amplia o alcance.</p>
           </div>
           <div class="field filter-field">
             <label for="topic-language">Idioma do artigo</label>
-            <select id="topic-language">
+            <select id="topic-language" aria-describedby="topic-language-help">
               <option value="ALL">Todos os idiomas</option>
               <option value="PORTUGUESE">Português</option>
               <option value="ENGLISH">Inglês</option>
@@ -336,21 +339,36 @@ WEB_UI_HTML = r"""<!doctype html>
               <option value="GERMAN">Alemão</option>
               <option value="ITALIAN">Italiano</option>
             </select>
+            <p id="topic-language-help" class="filter-help">Mostra apenas artigos publicados no idioma escolhido.</p>
           </div>
           <div class="field filter-field filter-field-small">
             <label for="topic-page-size">Artigos analisados</label>
-            <select id="topic-page-size">
+            <select id="topic-page-size" aria-describedby="topic-page-size-help">
               <option value="10">10 artigos</option>
               <option value="20" selected>20 artigos</option>
               <option value="50">50 artigos</option>
               <option value="100">100 artigos</option>
             </select>
+            <p id="topic-page-size-help" class="filter-help">Define quantos resultados aparecem e podem ser explorados nesta pesquisa.</p>
           </div>
         </div>
-        <label class="topic-theme-toggle">
-          <input id="topic-clusters-enabled" type="checkbox" checked>
-          <span><strong>Organizar resultados por temas</strong><small>Usa BERTopic e, quando disponível, IA para resumir os temas e revisar artigos sem grupo.</small></span>
-        </label>
+        <fieldset class="topic-cluster-settings">
+          <legend>Organização dos resultados</legend>
+          <label class="topic-theme-toggle topic-theme-toggle-primary">
+            <input id="topic-clusters-enabled" type="checkbox" checked>
+            <span><strong>Agrupar artigos por tema</strong><small>Cria grupos a partir da semelhança entre os títulos para facilitar a exploração.</small></span>
+          </label>
+          <div id="topic-cluster-options" class="topic-cluster-options">
+            <label class="topic-theme-toggle topic-theme-toggle-compact">
+              <input id="topic-clusters-ai" type="checkbox" checked>
+              <span><strong>Revisar grupos com IA</strong><small>Melhora os nomes e resumos quando a integração estiver disponível.</small></span>
+            </label>
+            <label class="topic-theme-toggle topic-theme-toggle-compact">
+              <input id="topic-clusters-map" type="checkbox" checked>
+              <span><strong>Exibir mapa de relações</strong><small>Mostra proximidade temática entre os artigos.</small></span>
+            </label>
+          </div>
+        </fieldset>
         <button id="topic-submit" type="submit">Pesquisar no PubMed <span aria-hidden="true">↗</span></button>
         <div class="suggestions" aria-label="Sugestões de pesquisa"><span>Experimente</span><button type="button" data-topic="Exercício físico e diabetes tipo 2">Exercício e diabetes</button><button type="button" data-topic="Terapia gênica para doenças hereditárias">Terapia gênica</button><button type="button" data-topic="Sono e saúde cardiovascular">Sono e saúde</button></div>
       </form>
@@ -368,6 +386,11 @@ WEB_UI_HTML = r"""<!doctype html>
           <label for="article-reference">PMID, link do PubMed ou DOI indexado no PubMed</label>
           <input id="article-reference" maxlength="500" placeholder="PMID, https://pubmed.ncbi.nlm.nih.gov/... ou 10.xxxx/...">
           <p class="hint">A referência precisa estar indexada no PubMed.</p>
+          <div id="selected-article-feedback" class="selected-article-feedback" hidden>
+            <span>Artigo selecionado</span>
+            <strong id="selected-article-title"></strong>
+            <small id="selected-article-meta"></small>
+          </div>
         </div>
         <div id="upload-field" class="field" hidden>
           <label for="article-file">Imagem ou arquivo do artigo</label>
@@ -413,12 +436,25 @@ WEB_UI_HTML = r"""<!doctype html>
       <div class="actions"><strong>Alegações deste artigo</strong><button id="save-current-article" type="button" class="secondary">Guardar na biblioteca</button></div>
       <div id="claim-pipeline-tabs" class="claim-tabs" aria-label="Navegação entre alegações"></div>
     </section>
-    <details id="source-reader" class="panel source-reader" hidden open>
-      <summary>Artigo fonte e alegações marcadas</summary>
-      <div class="reader-heading"><div><div class="kicker">TEXTO ORIGINAL</div><h2 id="reader-title">Artigo enviado</h2><p id="reader-scope" class="article-meta"></p></div><span class="reader-legend"><mark>Trecho de origem</mark> Passe o mouse ou toque para explorar.</span></div>
+    <details id="source-reader" class="panel source-reader" hidden open data-reader-theme="paper" data-reader-size="medium">
+      <summary>Leitor do artigo</summary>
+      <div class="reader-heading">
+        <div><div class="kicker">TEXTO ORIGINAL</div><h2 id="reader-title">Artigo enviado</h2><p id="reader-scope" class="article-meta"></p></div>
+        <span class="reader-legend"><mark>Trecho de origem</mark> Selecione qualquer trecho para criar sua própria alegação.</span>
+      </div>
+      <div class="reader-toolbar" role="toolbar" aria-label="Ferramentas de leitura">
+        <div class="reader-search"><label for="reader-search-input">Buscar no texto</label><input id="reader-search-input" type="search" placeholder="Termo ou expressão"><button id="reader-search-next" type="button" class="secondary">Próximo</button><span id="reader-search-count" aria-live="polite"></span></div>
+        <div class="reader-tool-group" aria-label="Tamanho do texto"><button id="reader-font-decrease" type="button" class="secondary" aria-label="Diminuir texto">A−</button><button id="reader-font-increase" type="button" class="secondary" aria-label="Aumentar texto">A+</button></div>
+        <div class="reader-tool-group" aria-label="Aparência"><button type="button" class="secondary reader-theme" data-theme="paper" aria-pressed="true">Papel</button><button type="button" class="secondary reader-theme" data-theme="contrast" aria-pressed="false">Contraste</button></div>
+        <button id="reader-focus" type="button" class="secondary" aria-pressed="false">Modo foco</button>
+      </div>
+      <div class="reader-progress" aria-hidden="true"><span id="reader-progress-bar"></span></div>
       <p id="reader-status" role="status" aria-live="polite"></p>
       <button id="reader-retry" type="button" class="secondary" hidden>Tentar carregar o texto novamente</button>
-      <div class="reader-layout"><article id="reader-document" aria-label="Texto disponível do artigo"></article><aside id="reader-sidebar" aria-label="Alegações extraídas do artigo"></aside></div>
+      <div class="reader-layout">
+        <aside id="reader-sidebar" aria-label="Navegação do artigo"><strong>Neste artigo</strong><nav id="reader-outline"></nav><div class="reader-selection-help"><span>COMPARAÇÃO</span><p>Selecione uma frase ou parágrafo no texto para transformá-lo em uma alegação rastreável.</p><strong id="reader-custom-count">0 alegações marcadas</strong></div></aside>
+        <article id="reader-document" tabindex="0" aria-label="Texto disponível do artigo"></article>
+      </div>
     </details>
 
     <section id="whole-article-report" class="panel document-report" aria-labelledby="whole-report-title">
@@ -668,6 +704,7 @@ WEB_UI_HTML = r"""<!doctype html>
     let activeEstimates = null;
     let activeTopicQuery = null;
     let activeTopicMode = null;
+    let activeTopicFilters = null;
     let pipelineBusy = false;
     let pollGeneration = 0;
     let structuredSearchGeneration = 0;
@@ -706,9 +743,9 @@ WEB_UI_HTML = r"""<!doctype html>
       if (className) element.className = className; parent.appendChild(element); return element;
     }
     function showError(message) {
-      setWorkflowStep(1);
       errorBox.textContent = message; errorBox.style.display = 'block';
       statusBox.style.display = 'none'; submit.disabled = false;
+      window.presentAppError?.(message);
     }
     function setProgress(status, progress) {
       setWorkflowStep(status === 'RESEARCHING' ? 3 : 2);
@@ -1660,6 +1697,9 @@ WEB_UI_HTML = r"""<!doctype html>
         const card = document.createElement('article'); card.className = 'claim-card';
         card.dataset.claimId = claim.claim_id;
         card.dataset.userSupplied = claim.user_supplied ? 'true' : 'false';
+        if (claim.user_supplied && claim.quote) card.dataset.quote = claim.quote;
+        if (claim.user_supplied && claim.section) card.dataset.section = claim.section;
+        if (claim.user_supplied && claim.page) card.dataset.page = String(claim.page);
         const head = document.createElement('div'); head.className = 'claim-card-head';
         const toggle = document.createElement('label');
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.dataset.claimId = claim.claim_id;
@@ -1696,7 +1736,9 @@ WEB_UI_HTML = r"""<!doctype html>
         const single = document.createElement('button'); single.type = 'button'; single.className = 'secondary';
         single.textContent = entry?.status === 'SUCCEEDED' ? 'Comparar novamente' : 'Investigar esta alegação';
         single.disabled = pipelineBusy;
-        single.addEventListener('click', () => startResearch([{claim_id: claim.claim_id, text: editor.value.trim(), ...(claim.user_supplied ? {source:'USER'} : {})}]));
+        single.addEventListener('click', () => startResearch([
+          claim.user_supplied ? customClaimPayload(card) : {claim_id: claim.claim_id, text: editor.value.trim()}
+        ]));
         actions.appendChild(single);
         if (entry?.status === 'SUCCEEDED' && entry.result) {
           const view = document.createElement('button'); view.type = 'button'; view.className = 'secondary'; view.textContent = 'Ver comparação';
@@ -1719,11 +1761,21 @@ WEB_UI_HTML = r"""<!doctype html>
       renderPipelineNavigation(job);
       if (shouldScroll) document.getElementById('source-reader').scrollIntoView({behavior: 'smooth', block: 'start'});
     }
+    const customClaimPayload = card => ({
+      claim_id: card.dataset.claimId,
+      text: card.querySelector('textarea').value.trim(),
+      source: 'USER',
+      ...(card.dataset.quote ? {quote: card.dataset.quote} : {}),
+      ...(card.dataset.section ? {section: card.dataset.section} : {}),
+      ...(card.dataset.page ? {page: Number(card.dataset.page)} : {})
+    });
     researchSelected.addEventListener('click', () => {
       const selected = [];
       reviewClaims.querySelectorAll('.claim-card').forEach(card => {
         const checkbox = card.querySelector('input[type="checkbox"]');
-        if (checkbox.checked) selected.push({claim_id: checkbox.dataset.claimId, text: card.querySelector('textarea').value.trim(), ...(card.dataset.userSupplied === 'true' ? {source:'USER'} : {})});
+        if (checkbox.checked) selected.push(card.dataset.userSupplied === 'true'
+          ? customClaimPayload(card)
+          : {claim_id: checkbox.dataset.claimId, text: card.querySelector('textarea').value.trim()});
       });
       startResearch(selected);
     });
@@ -1752,16 +1804,26 @@ WEB_UI_HTML = r"""<!doctype html>
         tabs.appendChild(button);
       });
     }
-    document.getElementById('add-custom-claim').addEventListener('click', () => {
+    window.addUserClaim = ({text = '', quote = '', section = '', page = null} = {}) => {
       if (pipelineBusy) return;
       const id = 'user-' + crypto.randomUUID();
       const card = document.createElement('article'); card.className = 'claim-card'; card.dataset.claimId = id; card.dataset.userSupplied = 'true';
+      if (quote) card.dataset.quote = quote;
+      if (section) card.dataset.section = section;
+      if (page) card.dataset.page = String(page);
       const label = document.createElement('label'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.dataset.claimId = id; checkbox.addEventListener('change', updateEstimate);
       label.appendChild(checkbox); addTextElement(label, 'strong', 'Sua alegação'); card.appendChild(label);
-      const editor = document.createElement('textarea'); editor.dataset.claimId = id; editor.maxLength = 2000; editor.setAttribute('aria-label', 'Sua alegação'); card.appendChild(editor);
-      addTextElement(card, 'p', 'Adicionada por você; não atribuída automaticamente aos autores.', 'review-source');
-      const single = document.createElement('button'); single.type = 'button'; single.className = 'secondary'; single.textContent = 'Investigar esta alegação'; single.addEventListener('click', () => startResearch([{claim_id:id, text:editor.value.trim(), source:'USER'}])); card.appendChild(single);
-      reviewClaims.appendChild(card); updateEstimate(); editor.focus();
+      const editor = document.createElement('textarea'); editor.value = text; editor.dataset.claimId = id; editor.maxLength = 2000; editor.setAttribute('aria-label', 'Sua alegação'); card.appendChild(editor);
+      const location = [section, page ? `p. ${page}` : null].filter(Boolean).join(' · ');
+      addTextElement(card, 'p', quote ? `Trecho marcado por você: “${quote}”${location ? ` — ${location}` : ''}` : 'Adicionada por você; não atribuída automaticamente aos autores.', 'review-source');
+      const single = document.createElement('button'); single.type = 'button'; single.className = 'secondary'; single.textContent = 'Investigar esta alegação'; single.addEventListener('click', () => startResearch([customClaimPayload(card)])); card.appendChild(single);
+      reviewClaims.appendChild(card); updateEstimate();
+      window.dispatchEvent(new CustomEvent('fatofake:user-claim-added', {detail: {claim_id:id, text, quote, section, page}}));
+      return {id, editor};
+    };
+    document.getElementById('add-custom-claim').addEventListener('click', () => {
+      const created = window.addUserClaim();
+      created?.editor.focus();
     });
     ['select-all-claims', 'clear-claim-selection'].forEach((id, index) => document.getElementById(id).addEventListener('click', () => {
       if (pipelineBusy) return;
@@ -1806,6 +1868,17 @@ WEB_UI_HTML = r"""<!doctype html>
     };
     async function runTopicSearch(page = 1) {
       const button = document.getElementById('topic-submit');
+      if (button.disabled) return;
+      const filters = {
+        topic: document.getElementById('topic-input').value.trim(),
+        article_type: document.getElementById('topic-type').value,
+        availability: document.getElementById('topic-availability').value,
+        indexing: document.getElementById('topic-indexing').value,
+        language: document.getElementById('topic-language').value,
+        page_size: Number(document.getElementById('topic-page-size').value)
+      };
+      const filterKey = JSON.stringify(filters);
+      if (page > 1 && filterKey !== activeTopicFilters) page = 1;
       const status = document.getElementById('topic-status');
       const results = document.getElementById('topic-results');
       const clusterResults = document.getElementById('topic-cluster-results');
@@ -1819,15 +1892,7 @@ WEB_UI_HTML = r"""<!doctype html>
       status.textContent = 'Preparando a consulta e pesquisando no PubMed…';
       try {
         if (page === 1) { activeTopicQuery = null; activeTopicMode = null; }
-        const requestBody = {
-          topic: document.getElementById('topic-input').value.trim(),
-          article_type: document.getElementById('topic-type').value,
-          availability: document.getElementById('topic-availability').value,
-          indexing: document.getElementById('topic-indexing').value,
-          language: document.getElementById('topic-language').value,
-          page,
-          page_size: Number(document.getElementById('topic-page-size').value)
-        };
+        const requestBody = {...filters, page};
         if (page > 1 && activeTopicQuery) requestBody.prepared_query = activeTopicQuery;
         const response = await fetch('/api/v1/pubmed-search', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1840,11 +1905,15 @@ WEB_UI_HTML = r"""<!doctype html>
         if (page === 1) {
           activeTopicQuery = data.query_results?.[0]?.query || null;
           activeTopicMode = data.mode;
+          activeTopicFilters = filterKey;
         }
         const mode = activeTopicMode === 'ASSISTED' ? 'Termos organizados com IA.' : 'Consulta direta ao PubMed, sem expansão por IA.';
-        status.textContent = articles.length
+        status.textContent = data.excluded_by_language
+          ? `${articles.length} artigo(s) exibido(s) nesta página. ${data.excluded_by_language} registro(s) omitido(s) por não confirmar o idioma selecionado. O total do PubMed é anterior a essa conferência. ${mode}`
+          : articles.length
           ? `Exibindo ${pagination.first_result}–${pagination.last_result} de ${pagination.total_results} artigos. ${mode} ${data.limitation || ''}${pagination.limited_by_pubmed ? ' O PubMed limita a navegação desta consulta aos primeiros 10.000 resultados; refine os termos para acessar os demais.' : ''}`
           : `Nenhum artigo encontrado. Tente outros termos ou amplie os filtros. ${mode}`;
+        if (data.language_note) addTextElement(results, 'p', data.language_note, 'hint');
         if (articles.length) {
           const resultHeader = document.createElement('div'); resultHeader.className = 'topic-result-header';
           addTextElement(resultHeader, 'strong', `${pagination.total_results} resultados no PubMed`);
@@ -1860,11 +1929,15 @@ WEB_UI_HTML = r"""<!doctype html>
           card.dataset.pmid = article.pmid;
           addTextElement(card, 'h3', article.title_pt || article.title);
           if (article.title_pt && article.title_pt !== article.title) {
-            addTextElement(card, 'p', `Título original: ${article.title}`, 'article-original-title');
+            addTextElement(card, 'p', `Título no PubMed: ${article.title}`, 'article-original-title');
           }
+          const titleSource = article.title_pt_source === 'PUBMED' ? 'Título em português fornecido pelo PubMed'
+            : article.title_pt_source === 'AI_TRANSLATION' ? 'Título traduzido por IA — confira o título no PubMed'
+            : 'Título exibido como recebido do PubMed; tradução indisponível';
+          addTextElement(card, 'p', titleSource, 'article-meta');
           const availability = article.has_full_text ? 'Texto completo no PMC' : 'Registro no PubMed';
           const indexing = article.is_medline ? 'Indexado no MEDLINE' : 'Não confirmado no MEDLINE';
-          addTextElement(card, 'p', [article.journal, formatPublicationDate(article.publication_date), `PMID ${article.pmid}`, ...(article.language_labels || []), indexing, availability, ...(article.publication_type_labels || [])].filter(Boolean).join(' · '), 'article-meta');
+          addTextElement(card, 'p', [article.journal, formatPublicationDate(article.publication_date), `PMID ${article.pmid}`, `Idioma de publicação: ${(article.language_labels || []).join(', ') || 'não informado'}`, indexing, availability, ...(article.publication_type_labels || [])].filter(Boolean).join(' · '), 'article-meta');
           if (article.authors?.length) addTextElement(card, 'p', article.authors.slice(0, 3).join(', '), 'article-meta');
           previewLink(card, 'Abrir no PubMed', article.url);
           if (article.pmc_url) {
@@ -1872,19 +1945,22 @@ WEB_UI_HTML = r"""<!doctype html>
             previewLink(card, 'Ler texto completo no PMC', article.pmc_url);
           }
           const choose = document.createElement('button'); choose.type = 'button'; choose.className = 'secondary';
-          choose.textContent = 'Usar este artigo'; choose.style.marginLeft = '12px';
+          choose.textContent = 'Selecionar para análise'; choose.style.marginLeft = '12px';
           choose.addEventListener('click', () => {
             setInputMode('link');
             document.getElementById('article-file').value = '';
             const reference = document.getElementById('article-reference');
             reference.value = article.url;
+            const feedback = document.getElementById('selected-article-feedback');
+            document.getElementById('selected-article-title').textContent = article.title_pt || article.title;
+            document.getElementById('selected-article-meta').textContent = [article.journal, formatPublicationDate(article.publication_date), `PMID ${article.pmid}`].filter(Boolean).join(' · ');
+            feedback.hidden = false;
             document.getElementById('analysis-form').scrollIntoView({behavior: 'smooth', block: 'center'});
-            reference.focus({preventScroll: true});
-            status.textContent = 'Artigo selecionado. Continue na aba de referência para iniciar a leitura.';
+            document.getElementById('submit').focus({preventScroll: true});
           });
           card.appendChild(choose); results.appendChild(card);
         });
-        if (articles.length) {
+        if (pagination.total_pages > 0) {
           const navigation = document.createElement('nav'); navigation.className = 'topic-pagination'; navigation.setAttribute('aria-label', 'Páginas dos resultados');
           const previous = document.createElement('button'); previous.type = 'button'; previous.className = 'secondary'; previous.textContent = '← Página anterior'; previous.disabled = !pagination.has_previous;
           previous.addEventListener('click', () => runTopicSearch(pagination.page - 1));
@@ -1895,7 +1971,11 @@ WEB_UI_HTML = r"""<!doctype html>
         }
         results.appendChild(queries);
         if (page === 1 && articles.length && document.getElementById('topic-clusters-enabled').checked) {
-          window.showPubmedClusters?.(articles, clusterResults, {enrich: true, cardsRoot: results});
+          window.showPubmedClusters?.(articles, clusterResults, {
+            enrich: document.getElementById('topic-clusters-ai').checked,
+            showMap: document.getElementById('topic-clusters-map').checked,
+            cardsRoot: results
+          });
         }
         if (page > 1) results.scrollIntoView({behavior: 'smooth', block: 'start'});
       } catch (error) {
@@ -1909,6 +1989,18 @@ WEB_UI_HTML = r"""<!doctype html>
     document.getElementById('topic-form').addEventListener('submit', event => {
       event.preventDefault();
       runTopicSearch(1);
+    });
+    const clusterToggle = document.getElementById('topic-clusters-enabled');
+    const clusterOptions = document.getElementById('topic-cluster-options');
+    const syncClusterOptions = () => {
+      const enabled = clusterToggle.checked;
+      clusterOptions.classList.toggle('is-disabled', !enabled);
+      clusterOptions.querySelectorAll('input').forEach(input => { input.disabled = !enabled; });
+    };
+    clusterToggle.addEventListener('change', syncClusterOptions);
+    syncClusterOptions();
+    document.getElementById('article-reference').addEventListener('input', () => {
+      document.getElementById('selected-article-feedback').hidden = true;
     });
 
     form.addEventListener('submit', async event => {

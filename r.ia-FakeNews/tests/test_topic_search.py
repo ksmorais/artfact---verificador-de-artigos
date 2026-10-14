@@ -1,5 +1,6 @@
 import json
 import unittest
+from dataclasses import replace
 from unittest.mock import Mock
 
 from fatofake.api import AnalysisJobService, create_app
@@ -85,6 +86,61 @@ class TopicSearchTests(unittest.TestCase):
         query = client.search_ids.call_args.args[0]
         self.assertIn('"Portuguese"[Language]', query)
         self.assertEqual(result["filters"]["language"], "PORTUGUESE")
+        self.assertEqual(result["articles"], [])
+        self.assertEqual(result["excluded_by_language"], 1)
+        self.assertTrue(result["language_note"])
+
+    def test_portuguese_indexed_english_title_is_translated_not_mislabeled(self):
+        client = self.client()
+        client.fetch_summaries.return_value = (
+            replace(client.fetch_summaries.return_value[0], languages=("por",)),
+        )
+        gateway = self.gateway(["diabetes"])
+        gateway._response_text.side_effect = [
+            json.dumps({"queries": ["diabetes"]}),
+            json.dumps({"items": [{"pmid": "123", "title_pt": "Título em português"}]}),
+        ]
+        result = PubMedTopicSearch(client, gateway).search("diabetes", language="PORTUGUESE")
+        article = result["articles"][0]
+        self.assertEqual(article["title_pt"], "Título em português")
+        self.assertEqual(article["title_pt_source"], "AI_TRANSLATION")
+        self.assertEqual(article["title"], "Title from PubMed")
+
+    def test_missing_portuguese_title_does_not_claim_translation(self):
+        client = self.client()
+        client.fetch_summaries.return_value = (
+            replace(client.fetch_summaries.return_value[0], languages=("por",)),
+        )
+        result = PubMedTopicSearch(client).search("diabetes", language="PORTUGUESE")
+        self.assertIsNone(result["articles"][0]["title_pt"])
+        self.assertIsNone(result["articles"][0]["title_pt_source"])
+
+    def test_native_portuguese_title_and_multilingual_publication_are_preserved(self):
+        client = self.client()
+        publication = client.fetch_summaries.return_value[0]
+        client.fetch_summaries.return_value = (
+            replace(publication, languages=("eng", "por"), vernacular_title="Título nativo"),
+            replace(publication, pmid="456"),
+            replace(publication, pmid="789", languages=()),
+        )
+        result = PubMedTopicSearch(client).search("diabetes", language="PORTUGUESE", page_size=1)
+        self.assertEqual(len(result["articles"]), 1)
+        self.assertEqual(result["articles"][0]["title_pt"], "Título nativo")
+        self.assertEqual(result["articles"][0]["title_pt_source"], "PUBMED")
+        self.assertEqual(result["excluded_by_language"], 2)
+        self.assertTrue(result["pagination"]["has_next"])
+
+    def test_empty_filtered_page_still_allows_next_page(self):
+        result = PubMedTopicSearch(self.client()).search("diabetes", language="PORTUGUESE", page_size=10)
+        self.assertEqual(result["articles"], [])
+        self.assertTrue(result["pagination"]["has_next"])
+
+    def test_french_and_german_language_aliases(self):
+        for language, code in (("FRENCH", "fra"), ("FRENCH", "fre"), ("GERMAN", "ger"), ("GERMAN", "deu")):
+            with self.subTest(language=language, code=code):
+                client = self.client()
+                client.fetch_summaries.return_value = (replace(client.fetch_summaries.return_value[0], languages=(code,)),)
+                self.assertEqual(len(PubMedTopicSearch(client).search("diabetes", language=language)["articles"]), 1)
 
     def test_translates_result_titles_and_preserves_the_original(self):
         client = self.client()

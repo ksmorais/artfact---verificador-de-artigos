@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeReference, filePayload, parseJob, mapResult, startAnalysis, pollAnalysis, selectClaims, extractedClaims } from '../src/api.ts'
+import { normalizeReference, filePayload, parseJob, mapResult, startAnalysis, pollAnalysis, selectClaims, extractedClaims, getSavedAnalysis } from '../src/api.ts'
 
 test('URLs/DOI válidos e protocolos bloqueados', () => {
   assert.equal(normalizeReference('10.1000/example'), '10.1000/example')
@@ -50,5 +50,77 @@ test('cliente envia contrato, consulta estado leve, seleciona alegações e info
     await assert.rejects(startAnalysis('10.1000/example', null, signal), /Chave ausente/)
     globalThis.fetch = async () => Response.json({ analysis_id: 'abc', status: 'FAILED', progress: 100, result: {}, error: { message: 'Falha no pipeline' } })
     await assert.rejects(pollAnalysis('abc', signal, () => {}), /Falha no pipeline/)
+  } finally { globalThis.fetch = original }
+})
+
+test('exibe somente dados de cobertura e evidências fornecidos pelo backend', () => {
+  const result = mapResult({ analysis_id: 'test', status: 'SUCCEEDED', result: { claim_analyses: [
+    { status: 'SUCCEEDED', claim: { text: 'Teste A' }, result: {
+      user_summary: { reading: { retrieved_count: 4, assessed_count: 3, full_text_count: 2 },
+        evidence_balance: { SUPPORTS: 2, CONTRADICTS: 1, NEUTRAL: 0, UNCERTAIN: 1 } },
+      verification: { indicators: { methodological_confidence: { label: 'Não avaliada' } } },
+    } },
+    { status: 'SUCCEEDED', claim: { text: 'Teste B' }, result: {
+      user_summary: { reading: { retrieved_count: 2, assessed_count: 1, full_text_count: 1 },
+        evidence_balance: { SUPPORTS: 0, CONTRADICTS: 1, NEUTRAL: 1, UNCERTAIN: 0 } },
+    } },
+  ] } })
+  assert.equal(result.credibilityScore, null)
+  assert.equal(result.indicators.retrieved, 6)
+  assert.equal(result.indicators.assessed, 4)
+  assert.equal(result.indicators.coverage, 67)
+  assert.equal(result.indicators.evidence.supports, 2)
+  assert.equal(result.indicators.evidence.contradicts, 2)
+  assert.equal(result.claims[0].indicators.methodology, 'Não avaliada')
+})
+test('dados ausentes, falhas e contagens incoerentes não geram percentuais', () => {
+  const result = mapResult({ analysis_id: 'a', status: 'SUCCEEDED', result: { claim_analyses: [
+    { status: 'SUCCEEDED', claim: { text: 'A' }, result: { user_summary: { reading: { retrieved_count: 1, assessed_count: 8 } } } },
+    { status: 'FAILED', claim: { text: 'B' }, error: { message: 'Indisponível' } },
+  ] } })
+  assert.equal(result.credibilityScore, null)
+  assert.equal(result.indicators.coverage, null)
+  assert.equal(result.indicators.evidence, null)
+  assert.equal(result.claims[1].indicators.coverage, null)
+})
+
+test('trechos científicos preservam identificadores e rejeitam links não seguros', () => {
+  const result = mapResult({ analysis_id: 'evidencias', status: 'SUCCEEDED', result: { claim_analyses: [
+    { status: 'SUCCEEDED', claim: { text: 'Alegação' }, result: { user_summary: {
+      findings: [
+        { relation: 'SUPPORTS', article_title: 'Estudo A', quote: 'Trecho apoiado por evidência', pmid: '123456', source_url: 'javascript:alert(1)' },
+        { relation: 'CONTRADICTS', article_title: 'Estudo B', quote_pt: 'Trecho divergente', doi: '10.1234/example', source_url: 'https://example.org/source' },
+        { relation: 'NEUTRAL', article_title: 'Estudo C' },
+      ],
+    } } },
+  ] } })
+  const findings = result.claims[0].findings
+  assert.equal(findings.length, 2)
+  assert.equal(findings[0].url, 'https://pubmed.ncbi.nlm.nih.gov/123456/')
+  assert.equal(findings[1].url, 'https://example.org/source')
+  assert.equal(findings[1].doi, '10.1234/example')
+})
+
+test('historico consulta resultado original, sem disparar nova analise', async () => {
+  const original = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), method: options.method })
+    return Response.json({ analysis_id: 'historico-1', status: 'SUCCEEDED',
+      result: { claim_analyses: [{ status: 'SUCCEEDED', claim: { text: 'Teste' },
+        result: { user_summary: { status: 'INCONCLUSIVE' } } }] } })
+  }
+  try {
+    const job = await getSavedAnalysis('historico-1', new AbortController().signal)
+    assert.equal(job.status, 'SUCCEEDED')
+    assert.deepEqual(calls, [{ url: '/api/v1/analyses/historico-1', method: 'GET' }])
+  } finally { globalThis.fetch = original }
+})
+
+test('historico diferencia registro Firestore de resultado ausente no Flask', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () => Response.json({ error: { message: 'Análise não encontrada' } }, { status: 404 })
+  try {
+    await assert.rejects(getSavedAnalysis('antigo', new AbortController().signal), /registro está no Firestore/)
   } finally { globalThis.fetch = original }
 })
