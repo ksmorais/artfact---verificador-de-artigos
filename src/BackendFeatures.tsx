@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, type MouseEvent } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import type { ExtractedClaim } from './api'
 
 const BASE = (import.meta.env?.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
@@ -127,7 +127,8 @@ export function TopicExplorer({ articles, onFilter }: { articles: Article[]; onF
 export function ScientificReader({ analysisId, onAdd, remaining }: {
   analysisId: string; onAdd: (claim: ExtractedClaim) => void; remaining: number
 }) {
-  const [open, setOpen] = useState(false)
+  // Abra o texto ao chegar à etapa de alegações, sem exigir um clique extra.
+  const [open, setOpen] = useState(true)
   const [source, setSource] = useState<SourceResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -159,27 +160,27 @@ export function ScientificReader({ analysisId, onAdd, remaining }: {
   }
   if (!parts.length && source?.text) parts.push({ heading: 'Texto do artigo', page: 0, text: source.text })
 
-  function capture(event: MouseEvent<HTMLDivElement>) {
+  function capture() {
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed || !selection.rangeCount || !contentRef.current) return
     const range = selection.getRangeAt(0)
-    if (!contentRef.current.contains(range.commonAncestorContainer)) return
+    if (!contentRef.current.contains(range.startContainer) || !contentRef.current.contains(range.endContainer)) return
     const excerpt = selection.toString().replace(/\s+/g, ' ').trim()
     if (excerpt.length < 2 || excerpt.length > 4000) { setFeedback('Selecione um trecho entre 2 e 4.000 caracteres.'); return }
     const el = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer as Element
-    const block = el?.closest('[data-reader-section]') || (event.target as HTMLElement).closest('[data-reader-section]')
+    const block = el?.closest('[data-reader-section]')
     const location = block?.getAttribute('data-reader-section') || ''
     const locationPage = Number(block?.getAttribute('data-reader-page'))
     setQuote(excerpt)
     setClaimText(excerpt.slice(0, 2000))
     setSection(location.slice(0, 300))
     setPage(Number.isInteger(locationPage) && locationPage > 0 ? locationPage : undefined)
-    setFeedback('Trecho capturado. Revise sua alegação antes de adicioná-la.')
+    setFeedback('Trecho selecionado no artigo. Clique em Adicionar trecho à análise ou revise sua alegação abaixo.')
   }
 
   function add() {
     const text = claimText.trim()
-    if (remaining <= 0) { setFeedback('O limite de 10 alegações foi atingido.'); return }
+    if (remaining <= 0) { setFeedback('O limite de 10 alegações foi atingido. Desmarque uma sugestão para adicionar sua própria alegação.'); return }
     if (text.length < 8 || text.length > 2000) { setFeedback('A alegação precisa ter de 8 a 2.000 caracteres.'); return }
     if (quote.length === 1) { setFeedback('O trecho da fonte precisa ter ao menos 2 caracteres.'); return }
     onAdd({
@@ -196,22 +197,27 @@ export function ScientificReader({ analysisId, onAdd, remaining }: {
 
   return <section className="space-y-3 rounded-xl border border-[--color-border] bg-[--color-surface] p-4">
     <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open} className="flex min-h-11 w-full items-center justify-between text-left text-sm font-semibold text-[--color-teal]">
-      Leitor do artigo e alegações próprias <span aria-hidden="true">{open ? '−' : '+'}</span>
+      Selecionar alegação diretamente no artigo <span aria-hidden="true">{open ? '− Minimizar' : '+ Expandir'}</span>
     </button>
     {open && <>
-      <p className="text-xs text-[--color-muted]">Selecione um trecho do texto com o mouse para registrar a origem da alegação. Você também pode escrever uma alegação manual.</p>
+      <p className="text-xs leading-relaxed text-[--color-muted]"><strong className="text-[--color-teal]">Como usar:</strong> destaque uma frase ou trecho do artigo com o mouse, dedo ou teclado. A seleção será copiada para o campo de alegação e você poderá adicioná-la para pesquisar junto com as sugestões automáticas. Também é possível escrever a alegação manualmente.</p>
       {loading && <p role="status" className="text-xs text-[--color-muted]">Carregando fonte original…</p>}
       {error && <p role="alert" className="text-xs text-[--color-red]">{error}</p>}
       {source && <div className="space-y-2">
         <h3 className="text-sm font-semibold text-[--color-foreground]">{source.title || 'Artigo analisado'}</h3>
         <p className="text-[11px] text-[--color-muted]">{[source.journal, source.content_scope].filter(Boolean).join(' · ')}</p>
         {source.source_url?.startsWith('https://') && <a href={source.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[--color-teal] underline">Abrir artigo original ↗</a>}
-        <div ref={contentRef} onMouseUp={capture} className="max-h-[420px] space-y-4 overflow-y-auto rounded-lg border border-[--color-border] bg-[--color-background] p-4">
+        <div ref={contentRef} onMouseUp={capture} onKeyUp={capture} onTouchEnd={capture} tabIndex={0} aria-label="Texto disponível do artigo. Selecione um trecho para criar sua alegação." className="max-h-[420px] space-y-4 overflow-y-auto rounded-lg border border-[--color-border] bg-[--color-background] p-4 selection:bg-[--color-teal-faint]">
           {parts.length ? parts.map((part, i) => <section key={i} data-reader-section={part.heading} data-reader-page={part.page} className="space-y-2">
             <h4 className="text-xs font-semibold text-[--color-teal]">{part.heading}</h4>
             <p className="whitespace-pre-wrap text-sm leading-7 text-[--color-foreground]">{part.text}</p>
           </section>) : <p className="text-sm text-[--color-muted]">Texto integral não disponível nesta fonte.</p>}
         </div>
+        {quote && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[--color-teal] bg-[--color-teal-faint] p-3">
+          <p className="min-w-0 flex-1 text-xs text-[--color-foreground]">Trecho selecionado: “{quote.slice(0, 150)}{quote.length > 150 ? '…' : ''}”</p>
+          <button type="button" disabled={remaining <= 0 || claimText.trim().length < 8} onClick={add}
+            className="min-h-10 rounded-lg bg-[--color-teal] px-4 text-xs font-semibold text-black hover:bg-[#14f4c6] disabled:opacity-40">Adicionar trecho à análise</button>
+        </div>}
       </div>}
       <label className="block text-xs text-[--color-muted]">Trecho da fonte (opcional)
         <textarea rows={2} maxLength={4000} value={quote} onChange={e => setQuote(e.target.value)}
@@ -225,7 +231,7 @@ export function ScientificReader({ analysisId, onAdd, remaining }: {
       {(section || page) && <p className="text-xs text-[--color-muted]">{section}{page ? ' · Página ' + page : ''}</p>}
       <button type="button" onClick={add} disabled={remaining <= 0 || claimText.trim().length < 8}
         className="min-h-11 rounded-lg border border-[--color-teal] px-4 text-sm font-semibold text-[--color-teal] hover:bg-[--color-teal] hover:text-black disabled:opacity-40">
-        Adicionar alegação ({remaining} disponível/disponíveis)
+        Adicionar alegação à pesquisa ({remaining} vaga(s))
       </button>
       {feedback && <p role="status" className="text-xs text-[--color-muted]">{feedback}</p>}
     </>}

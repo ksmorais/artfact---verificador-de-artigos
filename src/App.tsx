@@ -197,6 +197,7 @@ function ClaimOverviewCards({ result, activeIndex, onChoose }: {
   activeIndex: number
   onChoose: (index: number) => void
 }) {
+  const [minimized, setMinimized] = useState(false)
   return (
     <section aria-labelledby="selected-claims-heading" className="mt-6 space-y-4 rounded-xl border border-[--color-border] bg-[--color-surface] p-5 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -204,9 +205,15 @@ function ClaimOverviewCards({ result, activeIndex, onChoose }: {
           <h2 id="selected-claims-heading" className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-[--color-foreground]">Alegações do artigo</h2>
           <p className="mt-2 text-xs text-[--color-muted]">Escolha uma alegação para abrir sua análise e consultar as evidências.</p>
         </div>
-        <span className="rounded-full border border-[--color-border] px-3 py-1 font-mono text-[10px] text-[--color-muted]">{result.claims.length} alegação(ões)</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[--color-border] px-3 py-1 font-mono text-[10px] text-[--color-muted]">{result.claims.length} alegação(ões)</span>
+          <button type="button" onClick={() => setMinimized(value => !value)} aria-expanded={!minimized}
+            aria-controls="selected-claims-grid" className={`${BUTTON_GREEN} min-h-9 px-3 py-1.5 text-xs`}>
+            {minimized ? '＋ Expandir cards' : '− Minimizar cards'}
+          </button>
+        </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {!minimized && <div id="selected-claims-grid" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {result.claims.map((claim, index) => {
           const active = activeIndex === index
           return <button key={`${result.analysisId}-${index}`} type="button" aria-pressed={active}
@@ -221,7 +228,7 @@ function ClaimOverviewCards({ result, activeIndex, onChoose }: {
             <p className="line-clamp-3 text-sm leading-relaxed text-[--color-foreground]">{claim.text}</p>
           </button>
         })}
-      </div>
+      </div>}
     </section>
   )
 }
@@ -968,6 +975,9 @@ export default function App() {
   const [status, setStatus] = useState<AnalysisStatus>('idle')
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [activeResultClaim, setActiveResultClaim] = useState(0)
+  const [analysisMinimized, setAnalysisMinimized] = useState(false)
+  const [topicMinimized, setTopicMinimized] = useState(false)
+  const [minimizedDrafts, setMinimizedDrafts] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const controller = useRef<AbortController | null>(null)
   const busy = useRef(false)
@@ -1065,6 +1075,7 @@ export default function App() {
       data.healthArea = detectHealthArea(data.title)
       setResult(data)
       setActiveResultClaim(0)
+      setAnalysisMinimized(false)
       setJobId(id)
       setApiError('')
       setStatus('done')
@@ -1100,13 +1111,16 @@ export default function App() {
       const items = extractedClaims(job)
       // Mesmo sem alegações automáticas, o usuário pode criar as próprias no leitor.
       setChoices(items)
-      setSelected(items.slice(0, 10).map(c => c.claim_id))
+      // Deixa vagas para que o usuário selecione trechos do artigo diretamente.
+      setSelected(items.slice(0, 3).map(c => c.claim_id))
+      setMinimizedDrafts([])
       setStatus('selecting')
     } else {
       const data = mapResult(job)
       data.healthArea = detectHealthArea(data.title)
       setResult(data)
       setActiveResultClaim(0)
+      setAnalysisMinimized(false)
       const currentUser = auth.currentUser
       if (currentUser) {
         const entry = makeSavedArticle(data)
@@ -1205,6 +1219,7 @@ export default function App() {
       }
       if (active.signal.aborted) return
       setTopicResult(payload as unknown as TopicSearchResponse)
+      setTopicMinimized(false)
       setTopicFilteredPmids(null)
     } catch (error) {
       if (!active.signal.aborted) setTopicError(error instanceof TypeError ? 'Não foi possível acessar o servidor de pesquisa. Confira se o Flask está funcionando na porta 5000.' : error instanceof Error ? error.message : 'Não foi possível pesquisar o tema.')
@@ -1629,28 +1644,61 @@ export default function App() {
           {jobId && <button onClick={() => void runAnalysis('resume')} disabled={status === 'loading'} className={`${BUTTON_GREEN} ml-3`}>Retomar</button>}
         </div>}
         {status === 'loading' && <button onClick={stopPolling} className={`${BUTTON_GREEN} mt-4`}>Interromper consulta</button>}
-        {status === 'selecting' && <section className="mt-6 space-y-4 rounded-xl border border-[--color-border] bg-[--color-surface] p-5 sm:p-6">
-          <h2 className="text-base font-semibold text-[--color-foreground]">Selecione as alegações para pesquisar</h2>
-          <p className="text-sm text-[--color-muted]">Revise o texto extraído e escolha até 10 alegações para comparar com a literatura. A pesquisa usará o modo {depthRef.current === 'DEEP' ? 'avançado (DEEP)' : 'rápido (QUICK)' }.</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {choices.map((c, index) => <label key={c.claim_id} className={`flex items-start gap-3 rounded-xl border p-4 text-sm transition-colors ${selected.includes(c.claim_id)
-            ? 'border-[--color-teal] bg-[--color-teal-faint]'
-            : 'border-[--color-border] bg-[--color-background] hover:border-[--color-teal]'}`}>
-            <span className="sr-only">Selecionar alegação {index + 1}</span>
-            <input type="checkbox" checked={selected.includes(c.claim_id)}
-              disabled={!selected.includes(c.claim_id) && selected.length >= 10}
-              onChange={e => setSelected(prev => e.target.checked ? [...prev, c.claim_id] : prev.filter(id => id !== c.claim_id))} />
-            <span className="flex-1 space-y-2">
-              {c.source === 'USER' && <span className="block text-[10px] uppercase tracking-wider text-[--color-teal]">Alegação criada por você</span>}
-              <textarea rows={2} aria-label={'Editar alegação ' + c.claim_id} value={c.text} maxLength={2000}
-                onChange={event => setChoices(items => items.map(item => item.claim_id === c.claim_id ? { ...item, text: event.target.value } : item))}
-                className="w-full rounded-md border border-[--color-border] bg-[--color-background] p-2 text-sm text-[--color-foreground]" />
-              {c.quote && <span className="block text-[11px] text-[--color-muted]">Trecho original: “{c.quote.slice(0, 220)}{c.quote.length > 220 ? '…' : ''}”{c.section ? ' · ' + c.section : ''}{c.page ? ' · Página ' + c.page : ''}</span>}
-            </span>
-          </label>)}
+        {status === 'selecting' && <section className="mt-6 space-y-5 rounded-xl border border-[--color-border] bg-[--color-surface] p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-[--color-foreground]">Selecione as alegações para pesquisar</h2>
+            <span className="rounded-full border border-[--color-border] px-3 py-1 text-xs text-[--color-muted]">{selected.length} de 10 selecionadas</span>
           </div>
+          <p className="text-sm leading-relaxed text-[--color-muted]">Você pode usar alegações sugeridas pelo sistema <strong>ou selecionar diretamente um trecho do artigo</strong>, revisar a afirmação e adicioná-la à pesquisa. Modo: {depthRef.current === 'DEEP' ? 'avançado (DEEP)' : 'rápido (QUICK)'}.</p>
           <ScientificReader analysisId={jobId} onAdd={addUserClaim} remaining={10 - selected.length} />
-          <button disabled={!selected.length || choices.filter(c => selected.includes(c.claim_id)).some(c => c.text.trim().length < 8)} onClick={() => void runAnalysis('select')} className={`${BUTTON_FILLED} w-full sm:w-auto`}>Pesquisar {selected.length} alegação(ões)</button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[--color-border] pt-5">
+            <div>
+              <h3 className="text-sm font-semibold text-[--color-foreground]">Alegações sugeridas e adicionadas</h3>
+              <p className="mt-1 text-xs text-[--color-muted]">Marque as afirmações a pesquisar. Minimize individualmente as que não deseja editar.</p>
+            </div>
+            {choices.length > 0 && <button type="button" className={`${BUTTON_GREEN} min-h-9 px-3 py-2 text-xs`}
+              onClick={() => setMinimizedDrafts(current => current.length === choices.length ? [] : choices.map(item => item.claim_id))}>
+              {minimizedDrafts.length === choices.length ? '＋ Expandir todas' : '− Minimizar todas'}
+            </button>}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {choices.map((c, index) => {
+              const isSelected = selected.includes(c.claim_id)
+              const isMinimized = minimizedDrafts.includes(c.claim_id)
+              return <article key={c.claim_id} className={`space-y-3 rounded-xl border p-4 transition-colors ${isSelected
+                ? 'border-[--color-teal] bg-[--color-teal-faint]'
+                : 'border-[--color-border] bg-[--color-background] hover:border-[--color-teal]'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="flex min-h-9 cursor-pointer items-center gap-2 text-xs font-semibold text-[--color-foreground]">
+                    <input type="checkbox" checked={isSelected}
+                      disabled={!isSelected && selected.length >= 10}
+                      onChange={event => setSelected(prev => event.target.checked ? [...prev, c.claim_id] : prev.filter(id => id !== c.claim_id))} />
+                    <span>{c.source === 'USER' ? 'Alegação criada por você' : `Alegação sugerida ${index + 1}`}</span>
+                  </label>
+                  <button type="button" aria-expanded={!isMinimized}
+                    onClick={() => setMinimizedDrafts(ids => isMinimized ? ids.filter(id => id !== c.claim_id) : [...ids, c.claim_id])}
+                    className="min-h-9 rounded-lg border border-[--color-border] px-3 py-1.5 text-xs font-medium text-[--color-teal] hover:border-[--color-teal] hover:bg-[--color-teal-faint]">
+                    {isMinimized ? '＋ Expandir' : '− Minimizar'}
+                  </button>
+                </div>
+                {isMinimized ? <p className="line-clamp-2 text-sm leading-relaxed text-[--color-foreground]">{c.text}</p> : <div className="space-y-2">
+                  <textarea rows={3} aria-label={`Editar alegação ${index + 1}`} value={c.text} maxLength={2000}
+                    onChange={event => setChoices(items => items.map(item => item.claim_id === c.claim_id ? { ...item, text: event.target.value } : item))}
+                    className="w-full rounded-md border border-[--color-border] bg-[--color-background] p-2 text-sm text-[--color-foreground]" />
+                  {c.quote && <p className="text-[11px] leading-relaxed text-[--color-muted]">Trecho selecionado: “{c.quote.slice(0, 220)}{c.quote.length > 220 ? '…' : ''}”{c.section ? ' · ' + c.section : ''}{c.page ? ' · Página ' + c.page : ''}</p>}
+                  {c.source === 'USER' && <button type="button" onClick={() => {
+                    setChoices(items => items.filter(item => item.claim_id !== c.claim_id))
+                    setSelected(ids => ids.filter(id => id !== c.claim_id))
+                    setMinimizedDrafts(ids => ids.filter(id => id !== c.claim_id))
+                  }} className="min-h-9 text-xs text-[--color-red] underline">Remover alegação criada</button>}
+                </div>}
+              </article>
+            })}
+          </div>
+          <button disabled={!selected.length || choices.filter(c => selected.includes(c.claim_id)).some(c => c.text.trim().length < 8)}
+            onClick={() => void runAnalysis('select')} className={`${BUTTON_FILLED} w-full sm:w-auto`}>
+            Pesquisar {selected.length} alegação(ões)
+          </button>
         </section>}
         {/* Loading skeleton */}
         {status === 'loading' && (
@@ -1678,12 +1726,20 @@ export default function App() {
           <ClaimOverviewCards result={result} activeIndex={activeResultClaim}
             onChoose={index => {
               setActiveResultClaim(index)
-              window.requestAnimationFrame(() => document.getElementById('artfact-claims-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+              setAnalysisMinimized(false)
+              window.requestAnimationFrame(() => window.requestAnimationFrame(() => document.getElementById('artfact-claims-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })))
             }} />
-          <div id="artfact-analysis-result">
-            <AnalysisCard key={result.analysisId} result={result}
-              activeClaimIndex={activeResultClaim} onSelectClaim={setActiveResultClaim} />
-          </div>
+          <section id="artfact-analysis-result" className="mt-6 space-y-3" aria-label="Resultado da análise científica">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[--color-border] bg-[--color-surface] px-5 py-3">
+              <h2 className="text-sm font-semibold text-[--color-foreground]">Análise de afirmações</h2>
+              <button type="button" aria-expanded={!analysisMinimized} onClick={() => setAnalysisMinimized(value => !value)}
+                className={`${BUTTON_GREEN} min-h-9 px-3 py-2 text-xs`}>
+                {analysisMinimized ? '＋ Expandir análise' : '− Minimizar análise'}
+              </button>
+            </div>
+            {!analysisMinimized && <AnalysisCard key={result.analysisId} result={result}
+              activeClaimIndex={activeResultClaim} onSelectClaim={setActiveResultClaim} />}
+          </section>
         </>}
 
         {/* Artigos encontrados ficam depois das alegações e da análise de afirmações. */}
@@ -1694,8 +1750,15 @@ export default function App() {
               <h2 id="topic-results-heading" className="text-base font-semibold text-[--color-foreground]">Artigos encontrados no PubMed</h2>
               <p className="mt-1 text-xs text-[--color-muted]">{topicResult.pagination.total_results.toLocaleString('pt-BR')} resultado(s) para “{topicResult.topic}”</p>
             </div>
-            <span className="rounded-full border border-[--color-teal] bg-[--color-teal-faint] px-3 py-1 font-mono text-[10px] text-[--color-teal]">PUBMED</span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-[--color-teal] bg-[--color-teal-faint] px-3 py-1 font-mono text-[10px] text-[--color-teal]">PUBMED</span>
+              <button type="button" aria-expanded={!topicMinimized} onClick={() => setTopicMinimized(value => !value)}
+                className={`${BUTTON_GREEN} min-h-9 px-3 py-2 text-xs`}>
+                {topicMinimized ? '＋ Expandir artigos' : '− Minimizar artigos'}
+              </button>
+            </div>
           </div>
+          {!topicMinimized && <div className="space-y-4">
           {topicResult.language_note && <p className="rounded-lg border border-[--color-border] bg-[--color-background] p-3 text-xs text-[--color-muted]">{topicResult.language_note}{topicResult.excluded_by_language ? ' · ' + topicResult.excluded_by_language + ' registro(s) excluído(s) pelo idioma nesta página.' : ''}</p>}
           {topicGrouping && topicResult.articles.length >= 4 && <TopicExplorer
             key={topicResult.topic + ':' + topicResult.pagination.page + ':' + topicResult.articles.map(a => a.pmid).join(',')}
@@ -1731,6 +1794,7 @@ export default function App() {
               onClick={() => void runTopicSearch(topicResult.pagination.page + 1)} className={`${BUTTON_GREEN} text-xs`}>Próxima →</button>
           </div>}
           {topicResult.pagination.limited_by_pubmed && <p className="text-[11px] text-[--color-muted]">O PubMed limita a navegação aos primeiros 10.000 resultados. Refine os filtros para encontrar artigos específicos.</p>}
+          </div>}
         </section>}
 
         {/* Login banner */}
